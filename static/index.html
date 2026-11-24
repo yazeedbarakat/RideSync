@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#5B2384">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>RideSync</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%235B2384'/%3E%3Cpath d='M8 22c8 0 8-12 16-12' fill='none' stroke='%23fff' stroke-opacity='.5' stroke-width='3' stroke-linecap='round'/%3E%3Ccircle cx='24' cy='10' r='4' fill='%23E5007D'/%3E%3Ccircle cx='8' cy='22' r='3' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="preload" href="vendor/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -21,66 +22,71 @@
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.400 9.700 8 11 4.600-1.300 8-6 8-11V5l-8-3Zm-1.200 14L7 12.200l1.400-1.400 2.400 2.400 4.800-4.800L17 9.800 10.800 16Z" fill="currentColor" fill-rule="evenodd"/></symbol>
     <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.200 7 13 7 13s7-7.800 7-13a7 7 0 0 0-7-7Zm0 9.500A2.500 2.500 0 1 1 12 6.500a2.500 2.500 0 0 1 0 5Z" fill="currentColor" fill-rule="evenodd"/></symbol>
     <symbol id="i-restart" viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2.300-5.200M5 4v4.500h4.500" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V4m0 0L8 8m4-4 4 4M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.500v15a1 1 0 0 0 1.500.860l12-7.500a1 1 0 0 0 0-1.720l-12-7.500A1 1 0 0 0 7 4.500Z" fill="currentColor"/></symbol>
     <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 7h11m0 0-3.500-3.500M18 7l-3.500 3.500M17 17H6m0 0 3.500-3.500M6 17l3.500 3.500" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   </defs>
 </svg>
 
 <main id="login" hidden>
   <div class="hero">
-    <strong class="logo">RideSync</strong>
+    <div class="herotop"><strong class="logo">RideSync</strong><button class="lang" type="button" data-lang></button></div>
     <svg class="race" viewBox="0 0 360 170" aria-hidden="true">
       <path class="r-bus" d="M22 138C70 138 58 34 108 34s38 104 88 104 40-62 78-62 34 42 64 42"/>
       <g class="r-stops"><circle cx="108" cy="34" r="6"/><circle cx="196" cy="138" r="6"/><circle cx="274" cy="76" r="6"/></g>
       <path class="r-ride" pathLength="1" d="M22 138C130 138 190 44 330 40"/>
       <circle class="r-from" cx="22" cy="138" r="8"/>
       <circle class="r-to" cx="332" cy="40" r="11"/>
-      <text x="112" y="22">Bus</text><text class="t-ride" x="322" y="16">RideSync</text>
+      <text x="112" y="22" data-t>Bus</text><text class="t-ride" x="322" y="16">RideSync</text>
     </svg>
-    <h1>Will your bus make it to class?</h1>
-    <p>See when it will really arrive. If it's late, split a Jeeny ride with students going your way.</p>
+    <h1 data-t>Will your bus make it to class?</h1>
+    <p data-t>See when it will really arrive. If it's late, split a Jeeny ride with students going your way.</p>
   </div>
   <div class="panel">
     <form id="verify-form" novalidate>
-      <label for="email">University email</label>
+      <label for="email" data-t>University email</label>
       <input id="email" type="email" autocomplete="email" placeholder="you@cit.just.edu.jo" required>
       <p class="error" id="login-error" role="alert"></p>
-      <button class="primary">Verify student status</button>
+      <button class="primary" data-t>Verify student status</button>
     </form>
-    <p class="or">or try a demo student</p>
+    <p class="or" data-t>or try a demo student</p>
     <div class="row">
-      <button class="person" data-demo="ahmad@cit.just.edu.jo"><span class="av">A</span><span><b>Ahmad</b>8:00 at JUST</span></button>
-      <button class="person" data-demo="lina@cit.just.edu.jo"><span class="av v2">L</span><span><b>Lina</b>8:00 at JUST</span></button>
+      <button class="person" data-demo="ahmad@cit.just.edu.jo"><span class="av" data-t>A</span><span><b data-t>Ahmad</b><span data-t>8:00 at JUST</span></span></button>
+      <button class="person" data-demo="lina@cit.just.edu.jo"><span class="av v2" data-t>L</span><span><b data-t>Lina</b><span data-t>8:00 at JUST</span></span></button>
     </div>
-    <p class="note">Demo verification checks the email domain only. No email is sent and the address isn't saved. All data is simulated.</p>
+    <p class="note" data-t>Demo verification checks the email domain only. No email is sent and the address isn't saved. All data is simulated.</p>
   </div>
 </main>
 
 <main id="home" hidden>
   <div class="mapwrap">
-    <div id="map" aria-label="Live bus map"></div>
+    <div id="map" dir="ltr" aria-label="Live bus map"></div>
     <div class="topbar">
       <strong class="logo chip">RideSync</strong>
-      <button class="chip" id="logout" type="button" aria-label="Switch student"><span class="av" id="me-av"></span><span id="hello"></span><svg class="i"><use href="#i-swap"/></svg></button>
+      <span class="topend"><button class="chip lang" type="button" data-lang></button>
+      <button class="chip" id="logout" type="button" aria-label="Switch student"><span class="av" id="me-av"></span><span id="hello"></span><svg class="i"><use href="#i-swap"/></svg></button></span>
     </div>
-    <div class="chip clock"><b id="clock">--:--</b><span>Simulated data</span>
+    <div class="chip clock"><b id="clock">--:--</b><span data-t>Simulated data</span>
       <button id="restart" type="button" aria-label="Restart the demo clock" title="Restart the demo clock"><svg class="i"><use href="#i-restart"/></svg></button></div>
   </div>
   <div id="sheet">
     <section class="trip">
       <div class="ends">
-        <label><span class="vh">From</span><select id="hood"></select></label>
-        <label><span class="vh">To</span><select id="campus"></select></label>
+        <label><span class="vh" data-t>From</span><select id="hood"></select></label>
+        <label><span class="vh" data-t>To</span><select id="campus"></select></label>
       </div>
-      <label class="lec">Lecture<input id="lecture" type="time" required></label>
+      <label class="lec"><span data-t>Lecture</span><input id="lecture" type="time" required></label>
     </section>
     <section id="status" aria-live="polite"></section>
     <section id="ride" aria-live="polite"></section>
     <section id="prices"></section>
-    <section class="buslist"><h3>Buses now</h3><ul id="buses"></ul></section>
+    <section id="plan"></section>
+    <section class="buslist"><h3 data-t>Buses now</h3><ul id="buses"></ul></section>
     <p class="note" id="model"></p>
   </div>
 </main>
 <script src="vendor/leaflet.js"></script>
+<script src="i18n.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

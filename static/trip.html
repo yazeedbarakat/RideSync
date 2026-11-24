@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#5B2384">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>RideSync trip</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <symbol id="i-car" viewBox="0 0 24 24"><path d="M6.6 5.4A2.5 2.5 0 0 1 8.9 4h6.2a2.5 2.5 0 0 1 2.3 1.4L19.2 10A3 3 0 0 1 21 12.7V18a1.5 1.5 0 0 1-3 0v-.5H6V18a1.5 1.5 0 0 1-3 0v-5.300A3 3 0 0 1 4.800 10l1.800-4.600ZM7.200 10h9.600l-1.300-3.400a.6.6 0 0 0-.5-.4H9a.6.6 0 0 0-.5.4L7.200 10Zm-.450 4.900a1.200 1.200 0 1 0 0-2.400 1.200 1.200 0 0 0 0 2.400Zm10.500 0a1.200 1.200 0 1 0 0-2.400 1.200 1.200 0 0 0 0 2.400Z" fill="currentColor" fill-rule="evenodd"/></symbol>
+    <symbol id="i-cap" viewBox="0 0 24 24"><path d="M12 4 1.500 9.500 12 15l8.500-4.450V16h1.800V9.500L12 4Zm-6.500 9.700V17c1.500 1.700 3.800 2.600 6.500 2.600s5-.9 6.500-2.600v-3.300L12 17.100l-6.500-3.400Z" fill="currentColor"/></symbol>
+    <symbol id="i-walk" viewBox="0 0 24 24"><path d="M13.500 5.500a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM9.800 8.900 7 23h2.100l1.800-8 2.100 2v6h2v-7.500l-2.100-2 .6-3A7.300 7.300 0 0 0 19 13v-2a5 5 0 0 1-4.300-2.400l-1-1.600a2 2 0 0 0-2.500-.8L6 8.300V13h2V9.600l1.800-.7Z" fill="currentColor"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.400 9.700 8 11 4.600-1.300 8-6 8-11V5l-8-3Zm-1.200 14L7 12.200l1.400-1.400 2.400 2.400 4.800-4.800L17 9.800 10.800 16Z" fill="currentColor" fill-rule="evenodd"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.200 7 13 7 13s7-7.800 7-13a7 7 0 0 0-7-7Zm0 9.500A2.500 2.500 0 1 1 12 6.500a2.500 2.500 0 0 1 0 5Z" fill="currentColor" fill-rule="evenodd"/></symbol>
+</defs></svg>
+<main id="family">
+  <div class="mapwrap">
+    <div id="map" dir="ltr" aria-label="Trip map"></div>
+    <div class="topbar"><strong class="logo chip">RideSync</strong><button class="chip lang" type="button" data-lang></button></div>
+  </div>
+  <div class="fam" id="card" aria-live="polite"></div>
+</main>
+<script src="vendor/leaflet.js"></script>
+<script src="i18n.js"></script>
+<script src="trip.js"></script>
+</body>
+</html>

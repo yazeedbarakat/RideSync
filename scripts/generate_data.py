@@ -83,10 +83,10 @@ def make_history(rng, routes):
 # crowding shown in the demo are predicted from them by the model.
 # id, route, from_stop, filling, minute observed, minutes since opened, occupancy, rain, dow
 LIVE_BUSES = [
-    ("B1", "R1", 1, 0, 421, 33, 0.96, 0, 1),
-    ("B2", "R2", 0, 1, 425, 4, 0.22, 0, 1),
-    ("B3", "R3", 1, 0, 423, 25, 0.82, 0, 1),
-    ("B4", "R3", 0, 1, 425, 8, 0.34, 0, 1),
+    ("B1", "R1", 1, 0, 421, 33, 0.96, 0, c.DEMO_DOW),
+    ("B2", "R2", 0, 1, 425, 4, 0.22, 0, c.DEMO_DOW),
+    ("B3", "R3", 1, 0, 423, 25, 0.82, 0, c.DEMO_DOW),
+    ("B4", "R3", 0, 1, 425, 8, 0.34, 0, c.DEMO_DOW),
 ]
 
 

@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "data"))
 DB_PATH = DATA_DIR / "ridesync.db"
 ROUTES_PATH = ROOT / "data" / "routes.json"
+RIDE_PATHS_PATH = ROOT / "data" / "ride_paths.json"
 
 # --- Prices (JD) ---
 BUS_FARE_JD = 0.60
@@ -26,6 +27,8 @@ ARRIVAL_BUFFER_MIN = 10  # aim to arrive this long before the lecture
 RIDE_SPEED_KMH = 36  # rush-hour average
 ROAD_FACTOR = 1.3  # straight-line -> road distance
 WALK_SPEED_M_PER_MIN = 80
+MAX_EARLIER_MIN = 30  # if nobody fits the exact time, offer a car up to this much earlier
+EARLIER_STEP_MIN = 5
 SYNC_CAMPUSES = {"JUST"}  # pilot: no agreed fare for Yarmouk yet
 
 # --- Buses ---
@@ -35,6 +38,13 @@ CROWD_ALMOST_FULL = 0.70
 CROWD_FULL = 0.97
 STOP_WALKABLE_M = 800  # beyond this a student needs a taxi to the stop
 TAXI_TO_STOP_MIN = 10
+QUANTILES = (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)  # arrival-time distribution
+LATE_RISK = 0.30  # suggest a ride from this chance of being late, even if the best guess is on time
+# What a rider's crowding report means for the model's occupancy input
+REPORT_OCC = {"seats free": 0.45, "almost full": 0.85, "full": 1.0}
+PLAN_RELIABILITY = 0.90  # "be there by" time that works on at least this share of past days
+PLAN_LOOKBACK_MIN = 150
+PLAN_STEP_MIN = 5
 
 # --- Demo ---
 SEED = 1337
@@ -44,6 +54,7 @@ DEFAULT_LECTURE = "08:00"
 # demo story (catch deadline 07:16, ride leaves 07:20) can't expire mid-pitch.
 DEMO_HOLD_AFTER_MIN = 9  # pauses at 07:14
 DEMO_RUN_MIN = 75  # stops at 08:20, after the demo bus arrives
+DEMO_DOW = 1  # 0 = Sunday, so the demo day is a Monday
 CLOCK_MIN_PER_SEC = 0.1  # simulated minutes per real second
 CLOCK_MIN_PER_SEC_JOINED = 2.0
 

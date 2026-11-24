@@ -18,7 +18,11 @@ CREATE TABLE registry (
   email TEXT PRIMARY KEY, first_name TEXT, gender TEXT, hood TEXT, lecture TEXT);
 CREATE TABLE sessions (id TEXT PRIMARY KEY, profile TEXT);
 CREATE TABLE rides (
-  id TEXT, session TEXT, body TEXT, joined INTEGER DEFAULT 0, PRIMARY KEY (id, session));
+  id TEXT, session TEXT, day TEXT, body TEXT, internal TEXT, joined INTEGER DEFAULT 0, PRIMARY KEY (id, session));
+CREATE TABLE dropped (session TEXT, student INTEGER, PRIMARY KEY (session, student));
+CREATE TABLE reports (
+  session TEXT, bus TEXT, minute REAL, from_stop INTEGER, filling INTEGER, occ REAL, PRIMARY KEY (session, bus, minute));
+CREATE TABLE shares (token TEXT PRIMARY KEY, session TEXT, ride TEXT, now REAL, speed REAL, updated REAL);
 """
 
 
@@ -41,6 +45,13 @@ def all_rows(sql, args=()):
 def one(sql, args=()):
     rows = all_rows(sql, args)
     return rows[0] if rows else None
+
+
+def clear_session(session_id):
+    """Restart one visitor's demo: rides, drop-outs, bus reports and shared links."""
+    with connect() as con:
+        for table in ("rides", "dropped", "reports", "shares"):
+            con.execute(f"DELETE FROM {table} WHERE session = ?", (session_id,))
 
 
 def execute(sql, args=()):

@@ -56,18 +56,40 @@ def best_group(me, candidates, now):
     return None
 
 
-def to_ride(m, me):
-    """Public view of a match: first names only, never another student's location."""
-    group = m["group"]
+def find(me, candidates, now):
+    """Best car for the student's time, else the closest earlier one: (match, minutes earlier)."""
+    for earlier in range(0, c.MAX_EARLIER_MIN + 1, c.EARLIER_STEP_MIN):
+        m = best_group({**me, "desired_arrival": me["desired_arrival"] - earlier}, candidates, now)
+        if m:
+            return m, earlier
+    return None, 0
+
+
+def replacement(rest, candidates, pickup, arrive, depart, now):
+    """Closest student who can take a free seat without moving the pickup point or the times."""
+    ids = {r["id"] for r in rest}
+    ok = [s for s in candidates if s["id"] not in ids and s["desired_arrival"] >= arrive and group_ok([*rest, s])
+          and (w := walk_m(s, pickup)) <= c.MAX_WALK_M and now + w / c.WALK_SPEED_M_PER_MIN <= depart]
+    return min(ok, key=lambda s: (walk_m(s, pickup), s["id"]), default=None)
+
+
+def crew(group) -> dict:
+    """The parts of a ride that depend on who is in it. First names only."""
     n = len(group)
-    rid = hashlib.sha256(repr([(r["id"], m["depart"], me["campus"]) for r in group]).encode()).hexdigest()[:12]
+    return {"riders": n, "others": [{"name": r["first_name"]} for r in group[1:]],
+            "women_only": all(r["gender"] == "F" for r in group) and any(r["women_only"] for r in group),
+            "seat_price": c.seat_price(n), "prices": c.price_comparison(n)}
+
+
+def to_ride(m, me, day="today"):
+    """Public view of a match: never another student's location."""
+    group = m["group"]
+    rid = hashlib.sha256(repr((day, [(r["id"], m["depart"], me["campus"]) for r in group])).encode()).hexdigest()[:12]
     return {
-        "id": rid, "campus": me["campus"], "riders": n,
-        "others": [{"name": r["first_name"]} for r in group[1:]],
-        "women_only": all(r["gender"] == "F" for r in group) and any(r["women_only"] for r in group),
+        "id": rid, "day": day, "campus": me["campus"], **crew(group),
         "pickup": {"lat": round(m["pickup"]["lat"], 5), "lon": round(m["pickup"]["lon"], 5),
                    "label": f"{c.HOODS[me['hood']][0]} meeting point", "walk_m": round(m["walks"][0] / 10) * 10},
         "depart": c.min_to_hhmm(m["depart"]), "arrive": c.min_to_hhmm(m["arrive"]),
-        "distance_km": round(m["km"], 1), "seat_price": c.seat_price(n),
-        "max_seat_price": c.seat_price(c.MIN_RIDERS_PER_CAR), "prices": c.price_comparison(n),
+        "distance_km": round(m["km"], 1),
+        "max_seat_price": c.seat_price(c.MIN_RIDERS_PER_CAR),
     }
