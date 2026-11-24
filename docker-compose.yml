@@ -1,0 +1,7 @@
+services:
+  ridesync:
+    build: .
+    ports: ["${PORT:-8000}:8000"]
+    environment:
+      DEMO_NOW: "${DEMO_NOW:-07:05}"
+      PORT: "8000"
