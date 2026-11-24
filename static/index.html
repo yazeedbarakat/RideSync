@@ -5,51 +5,79 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#5B2384">
 <title>RideSync</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235B2384'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23E5007D'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%235B2384'/%3E%3Cpath d='M8 22c8 0 8-12 16-12' fill='none' stroke='%23fff' stroke-opacity='.5' stroke-width='3' stroke-linecap='round'/%3E%3Ccircle cx='24' cy='10' r='4' fill='%23E5007D'/%3E%3Ccircle cx='8' cy='22' r='3' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preload" href="vendor/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="vendor/leaflet.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-  <strong class="logo">RideSync</strong>
-  <span class="demo">Demo clock <b id="clock">--:--</b> · simulated data
-    <button id="restart" type="button" aria-label="Restart the demo clock" title="Restart the demo clock" hidden>↺</button></span>
-</header>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-bus" viewBox="0 0 24 24"><path d="M6 3h12a3 3 0 0 1 3 3v10a2 2 0 0 1-1.5 1.9V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-2h-9v2a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-2.1A2 2 0 0 1 3 16V6a3 3 0 0 1 3-3Zm-.5 4v4.5h13V7a1 1 0 0 0-1-1h-11a1 1 0 0 0-1 1Zm1.75 8.75a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Zm9.5 0a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z" fill="currentColor" fill-rule="evenodd"/></symbol>
+    <symbol id="i-car" viewBox="0 0 24 24"><path d="M6.6 5.4A2.5 2.5 0 0 1 8.9 4h6.2a2.5 2.5 0 0 1 2.3 1.4L19.2 10A3 3 0 0 1 21 12.7V18a1.5 1.5 0 0 1-3 0v-.5H6V18a1.5 1.5 0 0 1-3 0v-5.300A3 3 0 0 1 4.800 10l1.800-4.600ZM7.200 10h9.600l-1.300-3.400a.6.6 0 0 0-.5-.4H9a.6.6 0 0 0-.5.4L7.200 10Zm-.450 4.900a1.200 1.200 0 1 0 0-2.400 1.200 1.200 0 0 0 0 2.400Zm10.500 0a1.200 1.200 0 1 0 0-2.400 1.200 1.200 0 0 0 0 2.400Z" fill="currentColor" fill-rule="evenodd"/></symbol>
+    <symbol id="i-cap" viewBox="0 0 24 24"><path d="M12 4 1.500 9.500 12 15l8.500-4.450V16h1.800V9.500L12 4Zm-6.500 9.700V17c1.500 1.700 3.800 2.600 6.500 2.600s5-.9 6.500-2.600v-3.300L12 17.100l-6.500-3.400Z" fill="currentColor"/></symbol>
+    <symbol id="i-walk" viewBox="0 0 24 24"><path d="M13.500 5.500a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM9.800 8.900 7 23h2.100l1.800-8 2.100 2v6h2v-7.500l-2.100-2 .6-3A7.300 7.300 0 0 0 19 13v-2a5 5 0 0 1-4.300-2.400l-1-1.600a2 2 0 0 0-2.500-.8L6 8.300V13h2V9.600l1.800-.7Z" fill="currentColor"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.500 4.500 4.500L19 7.500" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.400 9.700 8 11 4.600-1.300 8-6 8-11V5l-8-3Zm-1.200 14L7 12.200l1.400-1.400 2.400 2.400 4.800-4.800L17 9.800 10.800 16Z" fill="currentColor" fill-rule="evenodd"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.200 7 13 7 13s7-7.800 7-13a7 7 0 0 0-7-7Zm0 9.500A2.500 2.500 0 1 1 12 6.500a2.500 2.500 0 0 1 0 5Z" fill="currentColor" fill-rule="evenodd"/></symbol>
+    <symbol id="i-restart" viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2.300-5.200M5 4v4.500h4.500" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 7h11m0 0-3.500-3.500M18 7l-3.500 3.500M17 17H6m0 0 3.500-3.500M6 17l3.500 3.500" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
 
 <main id="login" hidden>
-  <h1>Will your bus make it to class?</h1>
-  <p class="lead">See when it will really arrive. If it's late, share a Jeeny ride with students going your way.</p>
-  <form id="verify-form">
-    <label for="email">University email</label>
-    <input id="email" type="email" autocomplete="email" placeholder="you@cit.just.edu.jo" required>
-    <button class="primary">Verify student status</button>
-    <p class="error" id="login-error" role="alert"></p>
-  </form>
-  <p class="hint">Or try a demo student</p>
-  <div class="row">
-    <button class="ghost" data-demo="ahmad@cit.just.edu.jo">Ahmad</button>
-    <button class="ghost" data-demo="lina@cit.just.edu.jo">Lina</button>
+  <div class="hero">
+    <strong class="logo">RideSync</strong>
+    <svg class="race" viewBox="0 0 360 170" aria-hidden="true">
+      <path class="r-bus" d="M22 138C70 138 58 34 108 34s38 104 88 104 40-62 78-62 34 42 64 42"/>
+      <g class="r-stops"><circle cx="108" cy="34" r="6"/><circle cx="196" cy="138" r="6"/><circle cx="274" cy="76" r="6"/></g>
+      <path class="r-ride" pathLength="1" d="M22 138C130 138 190 44 330 40"/>
+      <circle class="r-from" cx="22" cy="138" r="8"/>
+      <circle class="r-to" cx="332" cy="40" r="11"/>
+      <text x="112" y="22">Bus</text><text class="t-ride" x="322" y="16">RideSync</text>
+    </svg>
+    <h1>Will your bus make it to class?</h1>
+    <p>See when it will really arrive. If it's late, split a Jeeny ride with students going your way.</p>
   </div>
-  <p class="hint">Demo verification checks the email domain only. No email is sent and the address isn't saved.</p>
+  <div class="panel">
+    <form id="verify-form" novalidate>
+      <label for="email">University email</label>
+      <input id="email" type="email" autocomplete="email" placeholder="you@cit.just.edu.jo" required>
+      <p class="error" id="login-error" role="alert"></p>
+      <button class="primary">Verify student status</button>
+    </form>
+    <p class="or">or try a demo student</p>
+    <div class="row">
+      <button class="person" data-demo="ahmad@cit.just.edu.jo"><span class="av">A</span><span><b>Ahmad</b>8:00 at JUST</span></button>
+      <button class="person" data-demo="lina@cit.just.edu.jo"><span class="av v2">L</span><span><b>Lina</b>8:00 at JUST</span></button>
+    </div>
+    <p class="note">Demo verification checks the email domain only. No email is sent and the address isn't saved. All data is simulated.</p>
+  </div>
 </main>
 
 <main id="home" hidden>
-  <div id="map" aria-label="Live bus map"></div>
+  <div class="mapwrap">
+    <div id="map" aria-label="Live bus map"></div>
+    <div class="topbar">
+      <strong class="logo chip">RideSync</strong>
+      <button class="chip" id="logout" type="button" aria-label="Switch student"><span class="av" id="me-av"></span><span id="hello"></span><svg class="i"><use href="#i-swap"/></svg></button>
+    </div>
+    <div class="chip clock"><b id="clock">--:--</b><span>Simulated data</span>
+      <button id="restart" type="button" aria-label="Restart the demo clock" title="Restart the demo clock"><svg class="i"><use href="#i-restart"/></svg></button></div>
+  </div>
   <div id="sheet">
     <section class="trip">
-      <div class="hello"><h2 id="hello"></h2><button class="link" id="logout">Switch</button></div>
-      <div class="fields">
-        <label>Lecture <input id="lecture" type="time" required></label>
-        <label>From <select id="hood"></select></label>
-        <label>To <select id="campus"></select></label>
+      <div class="ends">
+        <label><span class="vh">From</span><select id="hood"></select></label>
+        <label><span class="vh">To</span><select id="campus"></select></label>
       </div>
+      <label class="lec">Lecture<input id="lecture" type="time" required></label>
     </section>
     <section id="status" aria-live="polite"></section>
     <section id="ride" aria-live="polite"></section>
     <section id="prices"></section>
-    <section><h3>Buses now</h3><ul id="buses"></ul></section>
-    <section class="fine" id="model"></section>
+    <section class="buslist"><h3>Buses now</h3><ul id="buses"></ul></section>
+    <p class="note" id="model"></p>
   </div>
 </main>
 <script src="vendor/leaflet.js"></script>

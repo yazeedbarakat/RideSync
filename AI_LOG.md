@@ -9,3 +9,4 @@ How AI tools helped. Add a line per session: what we asked, what we kept, what w
 | 2026-11-24 | Claude Code | Wrote the seeded generator, prediction model, matching, API, mobile UI and tests | Model compared with a baseline on 3 held-out simulated days; matching rules tested on random pools |
 | 2026-11-24 | Claude Code | Searched live-bus starting states to fit the demo story | Rejected states not seen in the history, so the demo says 91% full rather than 94% |
 | 2026-11-24 | Claude Code | Made buses move along the predicted trajectory with a per-visitor demo clock | Holds at 07:14 so the story cannot expire mid-pitch; checked start, hold, join, arrival and restart in a browser |
+| 2026-11-24 | Claude Code | Redesigned the UI: deadline timeline, ticket-style rides, map markers, opening screen, laptop layout | Checked every state in a browser at 320, 390 and 1366 px |
