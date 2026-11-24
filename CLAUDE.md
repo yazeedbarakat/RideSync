@@ -50,9 +50,8 @@ SHARED_SEAT_JD         = solo fare / riders   (1.25 JD with 4 riders, 1.67 with 
 6. **Student verification** (mock: a university email domain check)
 
 ### Nice to have (only if Must-haves are done)
-- Live trip sharing link for family
-- Driver view: today's pods and stops
-- Arabic UI toggle
+- Built: family trip link, Arabic UI toggle, arrival range and late risk, "I'm on this bus" reports, drop-out handling, tomorrow plan
+- Not built: driver view (today's pods and stops)
 
 ### Out of scope
 Real payments, real Jeeny API or dispatch integration, native apps, Saudi Arabia, monthly passes.
@@ -89,9 +88,9 @@ Real payments, real Jeeny API or dispatch integration, native apps, Saudi Arabia
 
 ## Demo mechanics
 
-- Each visitor's clock starts at `DEMO_NOW` (07:05), runs at 6x, and **holds at 07:14** until they join, because Ahmad's bus can't be caught after 07:16. After joining it runs fast to 08:20. ↺, reload or switching student restarts it. Settings are in `app/config.py`.
+- Each visitor's clock starts at `DEMO_NOW` (07:05), runs at 6x, and **holds at 07:14** until they join, because Ahmad's bus can't be caught after 07:16. After joining it waits for "Play the trip", then runs fast to 08:20 (so there is time to show sharing and drop-outs). ↺, reload or switching student restarts it. Settings are in `app/config.py`.
 - Buses follow the model's predicted trajectory along the road. Live buses are inputs in `scripts/generate_data.py`; arrival and crowding come from the model. Don't hard-code predictions.
-- Each visitor gets their own session, so one judge joining never fills another's car.
+- Each visitor gets their own session, so one judge joining never fills another's car. Bus reports, drop-outs and shared links are per session too, and ↺ clears them.
 - Gender comes from the mock registry, never from the client. Demo students: `ahmad@cit.just.edu.jo`, `lina@cit.just.edu.jo`.
 - Keep numpy and scikit-learn pinned: the 8:14 / 91% demo numbers depend on them (covered by tests).
 - Say openly that the data is synthetic.

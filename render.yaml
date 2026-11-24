@@ -1,0 +1,10 @@
+# Render blueprint: New > Blueprint > pick this repo. Public HTTPS, no secrets needed.
+services:
+  - type: web
+    name: ridesync
+    runtime: docker
+    plan: free  # sleeps when idle: open the link a few minutes before judging
+    healthCheckPath: /healthz
+    envVars:
+      - key: DEMO_NOW
+        value: "07:05"
