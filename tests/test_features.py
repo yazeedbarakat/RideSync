@@ -177,3 +177,11 @@ def test_tomorrow_is_planned_and_reserved_apart_from_today(api):
     for hood in c.HOODS:
         for campus in c.CAMPUSES:
             assert api.post("/api/plan", headers=h, json={"hood": hood, "lecture": "08:00", "campus": campus}).status_code == 200
+
+
+def test_static_files_are_revalidated(api):
+    for path in ("/", "/app.js", "/i18n.js", "/style.css"):
+        r = api.get(path)
+        assert r.headers["cache-control"] == "no-cache"
+        again = api.get(path, headers={"If-None-Match": r.headers["etag"]})
+        assert again.status_code == 304

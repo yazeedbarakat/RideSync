@@ -4,7 +4,7 @@
 No. Students, trips and live buses are simulated. Station and campus coordinates come from OpenStreetMap. The model is really trained on the simulated trips and scored on 3 days it never saw.
 
 **Where will real bus data come from?**
-Students. Tap "I'm on this bus" in the list, say where it is and how full, and the same model forecasts again from that report. In the demo one report is trusted on its own. A pilot needs agreement between riders or phone GPS before it changes anyone else's forecast.
+Students. The backend already takes a rider's report (where the bus is and how full) and the same model forecasts again from it; the demo screen has no button for this. One report is trusted on its own. A pilot needs agreement between riders or phone GPS before it changes anyone else's forecast.
 
 **What is the AI?**
 1. Gradient-boosted arrival and crowding models: 1.8 min average error against 4.6 for a historical average (simulated, held out).

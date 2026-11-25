@@ -16,9 +16,8 @@ Tests: `.venv/bin/pip install -r requirements-dev.txt && .venv/bin/python -m pyt
 | `scripts/generate_data.py` | Seeded synthetic students, bus history and demo scenario |
 | `static/trip.html`, `trip.js` | Family page for a shared trip |
 | `static/i18n.js` | Arabic texts |
-| `scripts/impact.py` | Simulated impact numbers (`docs/impact.md`) |
 | `scripts/compare_gps.py` | Compare a recorded bus trip (GPX) with the simulated ones |
-| `docs/` | Judge Q&A, survey, impact numbers |
+| `docs/` | Judge Q&A, survey |
 | `render.yaml` | Public HTTPS deployment |
 | `scripts/fetch_ride_paths.py` | One-off OSRM fetch that produced `data/ride_paths.json` |
 | `scripts/fetch_routes.py` | One-off OSRM fetch that produced `data/routes.json` |

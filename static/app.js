@@ -9,9 +9,7 @@ let buses = [], busMarkers = new Map(), lastCheck = null, offeredRide = null, jo
 let playing = false; // after joining, the clock waits for "Play the trip"
 let womenOnly = false, rideNote = '';
 let shareToken = null, lastBeat = 0, beatNow = -1;
-let reportOpen = null, reportNotes = {}; // bus id with the form open; last reply per bus
 let plan = null, reserved = null, editWeek = false, planSeq = 0;
-let metrics = null;
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'];
 let timeline = null; // { head, start, end } of the timeline on screen
 const hhmm = (m) => String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(Math.floor(m) % 60).padStart(2, '0');
@@ -115,7 +113,7 @@ async function restartClock() {
     if (!me) { $('login-error').textContent = t(e.message); return; }
   }
   simNow = cfg.clock.start; lastMinute = -1; lastFrame = 0; joinedRide = null; playing = false;
-  reserved = null; plan = null; editWeek = false; reportNotes = {}; womenOnly = false;
+  reserved = null; plan = null; editWeek = false; womenOnly = false;
   $('clock').textContent = hhmm(simNow);
   await refresh();
   $('sheet').scrollTop = 0;
@@ -137,7 +135,6 @@ function frame(ts) {
 }
 function onMinute() {
   $('clock').textContent = hhmm(simNow);
-  if (!reportOpen) showBuses(); // don't rebuild a form someone is filling in
   if (joinedRide) updateJoined();
   else recheck();
 }
@@ -173,7 +170,7 @@ async function refresh() {
   const trip = currentTrip();
   if (joinedRide && shareToken) api(`api/rides/${encodeURIComponent(joinedRide.id)}/unshare`, {}).catch(() => {});
   joinedRide = null; // changing the trip leaves the confirmed-ride view
-  offeredRide = null; playing = false; shareToken = null; rideNote = ''; reportOpen = null;
+  offeredRide = null; playing = false; shareToken = null; rideNote = '';
   $('ride').replaceChildren(); $('ride').className = '';
   try {
     const now = hhmm(simNow);
@@ -183,7 +180,6 @@ async function refresh() {
     buses = live.buses;
     showStatus(check, trip);
     drawMap(trip);
-    showBuses();
     showPrices(cfg.prices, trip.campus);
     loadPlan();
   } catch (e) {
@@ -412,14 +408,13 @@ function showJoined(scroll = true) {
   const ride = joinedRide, p = ride.prices, box = $('ride');
   box.className = 'confirmed in';
   const play = el('button', { className: 'primary', id: 'play' }, icon('play'), t('Play the trip'));
-  play.onclick = () => { playing = true; reportOpen = null; lastBeat = -1e6; updateJoined(); };
+  play.onclick = () => { playing = true; lastBeat = -1e6; updateJoined(); };
   const leave = el('button', { className: 'quiet', textContent: t('Leave ride') });
   const drop = el('button', { className: 'quiet demo', textContent: t('Demo: {name} drops out', { name: t(ride.others[ride.others.length - 1].name) }) });
   const err = el('p', { className: 'error', role: 'alert' });
   leave.onclick = () => rideAction('leave', [leave, drop], err, () => {
     shareToken = null; joinedRide = null; rideNote = '';
     showRide(ride, currentTrip());
-    showBuses(); // reporting is available again
   });
   drop.onclick = () => rideAction('dropout', [leave, drop], err, afterDropout);
   box.replaceChildren(
@@ -460,7 +455,6 @@ function afterDropout(r) {
   drawRide();
   showStatus(lastCheck, currentTrip()); // Sync button comes back
   showPrices(cfg.prices, currentTrip().campus);
-  showBuses();
   $('ride').className = 'plain';
   $('ride').replaceChildren(noteLine(t('{a} dropped out, so fewer than {n} riders were left and the ride was cancelled. No charge.', { a, n })));
 }
@@ -596,7 +590,7 @@ function showPlan() {
   box.replaceChildren(...kids);
 }
 
-// --- Prices and buses ---
+// --- Prices ---
 function showPrices(p, campus) {
   if (!cfg.sync_campuses.includes(campus)) { $('prices').replaceChildren(); return; }
   const rows = [['Bus only', p.bus, money(p.bus)], ['RideSync', p.ridesync, money(p.ridesync)], ['Taxi + bus', p.taxi_plus_bus, money(p.taxi_plus_bus)],
@@ -610,74 +604,6 @@ function showPrices(p, campus) {
     })),
     el('p', { className: 'note', textContent: t('RideSync price with {n} riders.', { n: p.riders }) }));
 }
-function showBuses() {
-  $('buses').replaceChildren(...buses.map((b) => {
-    const done = simNow >= b.arrival_minute;
-    const when = t(done ? 'Arrived' : simNow < b.departs_minute ? 'Waiting to fill' : 'On the road');
-    const li = el('li', { className: done ? 'done' : '' },
-      el('span', { className: 'rt' }, icon('bus')),
-      el('div', {}, el('b', { textContent: tRoute(b.route_name) }),
-        el('span', { className: 'when', textContent: done ? when : b.level === 'seats free' ? `${when}${lang === 'ar' ? '،' : ','} ${t(b.level)}`
-          : t('{when}, gets {level}', { when, level: t(b.level) }) }),
-        b.reported ? el('span', { className: 'when rep', textContent: t('Rider report {t}', { t: b.reported }) }) : null),
-      el('div', { className: 'right' }, el('b', { textContent: b.arrival }), meter(b.peak_occupancy_pct, b.level)));
-    if (!done && !joinedRide && b.campus === $('campus').value) li.append(reportBox(b));
-    return li;
-  }));
-}
-
-// --- Crowdsourced bus reports ---
-function reportBox(b) {
-  const box = el('div', { className: 'report' });
-  const note = reportNotes[b.id];
-  if (reportOpen !== b.id) {
-    const open = el('button', { className: 'quiet', textContent: t("I'm on this bus") });
-    open.onclick = () => { reportOpen = b.id; delete reportNotes[b.id]; showBuses(); };
-    box.append(open);
-    if (note) box.append(el('p', { className: 'notice', role: 'status', textContent: note }));
-    return box;
-  }
-  const stops = cfg.routes.find((r) => r.id === b.route).stops;
-  const where = el('select', { ariaLabel: t('Where is it?') });
-  if (b.can_wait) where.append(el('option', { value: 'w0', textContent: t('Still waiting at {stop}', { stop: t(stops[0].name) }) }));
-  for (let i = b.last_stop; i < stops.length - 1; i++) where.append(el('option', { value: i, textContent: t('Just left {stop}', { stop: t(stops[i].name) }) }));
-  const err = el('p', { className: 'error', role: 'alert' });
-  const levels = Object.keys(LEVEL).map((level) => {
-    const btn = el('button', { className: 'lvl ' + LEVEL[level], textContent: t(level) });
-    btn.onclick = async () => {
-      levels.forEach((x) => { x.disabled = true; });
-      const waiting = where.value === 'w0';
-      try {
-        const r = await api(`api/buses/${encodeURIComponent(b.id)}/report`, { stop: waiting ? 0 : Number(where.value), waiting, level, now: hhmm(simNow) });
-        reportOpen = null;
-        reportNotes[b.id] = r.before === r.after ? t('Thanks. Arrival is still {a}', { a: ltr(r.after) }) : t('Thanks. Arrival updated {a} → {b}', { a: ltr(r.before), b: ltr(r.after) });
-        await afterReport();
-      } catch (e) { err.textContent = t(e.message); levels.forEach((x) => { x.disabled = false; }); }
-    };
-    return btn;
-  });
-  const cancel = el('button', { className: 'quiet', textContent: t('Cancel') });
-  cancel.onclick = () => { reportOpen = null; showBuses(); };
-  box.append(el('label', {}, t('Where is it?'), where), el('span', { className: 'when', textContent: t('How full is it?') }), el('div', { className: 'lvls' }, ...levels), err, cancel);
-  return box;
-}
-async function afterReport() { // new forecast; keeps any ride on screen
-  const mine = seq, trip = currentTrip(), now = hhmm(simNow);
-  const [check, live] = await Promise.all([
-    api('api/late-check?' + new URLSearchParams({ ...trip, now })), api('api/buses/predictions?now=' + now)]);
-  if (mine !== seq) return;
-  buses = live.buses;
-  showBuses();
-  if (joinedRide) { lastCheck = check; updateJoined(); } else showStatus(check, trip);
-  drawMap(trip, false);
-}
-
-function showModel() {
-  if (!metrics) return;
-  const a = metrics.arrival_mae_min;
-  $('model').textContent = t('Arrival model: {m} min average error vs. {b} min for a historical average, on {d} held-out days of simulated trips. Its 80% range held the real arrival {c}% of the time.',
-    { m: a.model.toFixed(1), b: a.baseline.toFixed(1), d: metrics.held_out_days, c: Math.round(metrics.range_coverage * 100) });
-}
 function fillSelects() {
   const keep = [$('hood').value, $('campus').value];
   $('hood').replaceChildren(...cfg.hoods.map((h) => el('option', { value: h.id, textContent: t(h.name) })));
@@ -688,11 +614,11 @@ function rerender() { // language change: same state, new words
   $('restart').ariaLabel = $('restart').title = t('Restart the demo clock');
   $('logout').ariaLabel = t('Switch student');
   if (!cfg) return;
-  fillSelects(); showModel();
+  fillSelects();
   if (!me || $('home').hidden || !lastCheck) return;
   const trip = currentTrip();
-  rideNote = ''; reportNotes = {}; reportOpen = null; // already shown in the other language
-  showMe(); showBuses(); showPlan(); drawMap(trip, false);
+  rideNote = ''; // already shown in the other language
+  showMe(); showPlan(); drawMap(trip, false);
   if (joinedRide) { showStatus(lastCheck, trip); showJoined(false); }
   else if (offeredRide || $('ride').children.length) showRide(offeredRide, trip);
   else { showStatus(lastCheck, trip); showPrices(cfg.prices, trip.campus); }
@@ -709,7 +635,6 @@ async function start() {
   $('verify-form').onsubmit = (e) => { e.preventDefault(); verify($('email').value); };
   document.querySelectorAll('[data-demo]').forEach((b) => { b.onclick = () => verify(b.dataset.demo); });
   new ResizeObserver(() => map && map.invalidateSize()).observe($('map'));
-  api('api/model').then((m) => { metrics = m; showModel(); }).catch(() => {});
   me = store.get();
   if (me && me.session && me.profile) await openHome(); else { me = null; $('login').hidden = false; }
 }

@@ -304,4 +304,13 @@ def reset(s: dict = Depends(session)):
     return {"ok": True}
 
 
-app.mount("/", StaticFiles(directory=c.ROOT / "static", html=True), name="static")
+class FreshStatic(StaticFiles):
+    """Browsers re-check every file, so an update never mixes a new page with a cached old script."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/", FreshStatic(directory=c.ROOT / "static", html=True), name="static")

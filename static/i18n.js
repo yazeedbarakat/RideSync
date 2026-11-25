@@ -50,13 +50,8 @@ const AR = {
   'No bus was reliable for this lecture time': 'لا يوجد باص موثوق لموعد هذه المحاضرة',
   'Shared ride at {t}, {price}': 'رحلة مشتركة الساعة {t}، {price}', 'Women-only. Arrives {t}': 'للطالبات فقط. الوصول {t}', 'Arrives {t}': 'الوصول {t}', Reserve: 'حجز', Cancel: 'إلغاء', 'Seat reserved': 'تم حجز المقعد',
   'No shared ride matches this time yet': 'لا توجد رحلة مشتركة لهذا الموعد بعد',
-  // Buses
-  'Buses now': 'الباصات الآن', Arrived: 'وصل', 'Waiting to fill': 'ينتظر الامتلاء', 'On the road': 'في الطريق', 'seats free': 'مقاعد متاحة', 'almost full': 'شبه ممتلئ', full: 'ممتلئ', '{when}, gets {level}': '{when}، سيصبح {level}',
-  '{route}: arrives {t}, {level}': '{route}: الوصول {t}، {level}', 'Rider report {t}': 'بلاغ راكب {t}',
-  "I'm on this bus": 'أنا في هذا الباص', 'Where is it?': 'أين الباص؟', 'How full is it?': 'ما مدى امتلائه؟', 'Still waiting at {stop}': 'ما زال ينتظر في {stop}', 'Just left {stop}': 'غادر {stop} الآن',
-  'Thanks. Arrival updated {a} → {b}': 'شكرًا. تحديث الوصول من {a} إلى {b}', "Thanks. Arrival is still {a}": 'شكرًا. الوصول ما زال {a}',
-  "That doesn't match where the bus was last seen": 'لا يتوافق هذا مع آخر موقع للباص', 'This bus has already arrived': 'وصل هذا الباص',
-  'Arrival model: {m} min average error vs. {b} min for a historical average, on {d} held-out days of simulated trips. Its 80% range held the real arrival {c}% of the time.': 'نموذج الوصول: متوسط خطأ {m} دقيقة مقابل {b} دقيقة للمتوسط التاريخي، على {d} أيام محاكاة لم يتدرب عليها. ونطاق 80% شمل الوصول الفعلي في {c}% من الحالات.',
+  // Bus markers on the map
+  'seats free': 'مقاعد متاحة', 'almost full': 'شبه ممتلئ', full: 'ممتلئ', '{route}: arrives {t}, {level}': '{route}: الوصول {t}، {level}',
   // Family page
   'Trip to {campus}': 'رحلة إلى {campus}', '{name} is waiting for pickup': '{name}: بانتظار الانطلاق', '{name} is on the way': '{name}: في الطريق', '{name} has arrived': '{name}: تم الوصول',
   'Pickup at {place}': 'الانطلاق من {place}', 'Shared car with {n} verified students': 'سيارة مشتركة مع {n} طلاب موثّقين', 'Women-only car': 'سيارة للطالبات فقط',

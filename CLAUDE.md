@@ -50,7 +50,7 @@ SHARED_SEAT_JD         = solo fare / riders   (1.25 JD with 4 riders, 1.67 with 
 6. **Student verification** (mock: a university email domain check)
 
 ### Nice to have (only if Must-haves are done)
-- Built: family trip link, Arabic UI toggle, arrival range and late risk, "I'm on this bus" reports, drop-out handling, tomorrow plan
+- Built: family trip link, Arabic UI toggle, arrival range and late risk, bus reports (API only, no button), drop-out handling, tomorrow plan
 - Not built: driver view (today's pods and stops)
 
 ### Out of scope
