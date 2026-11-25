@@ -26,5 +26,6 @@ Tests: `.venv/bin/pip install -r requirements-dev.txt && .venv/bin/python -m pyt
 
 All students, trips and live buses are synthetic. Station and campus coordinates are from
 OpenStreetMap; which bus lines stop where is our approximation. Map data © OpenStreetMap contributors.
+Fonts: Poppins (Indian Type Foundry) and Inter, both under the SIL Open Font License.
 
 Resetting the demo: tap ↺ to restart the clock; restarting `./run.sh` rebuilds the database. Each visitor has their own session.

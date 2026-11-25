@@ -82,7 +82,7 @@ Real payments, real Jeeny API or dispatch integration, native apps, Saudi Arabia
 
 - One **FastAPI** app: API, ML (scikit-learn), matching, SQLite, and it serves the frontend
 - **Frontend:** mobile-first plain JS with Leaflet (vendored), no build step
-- **Design:** looks like the Jeeny app (home, menu, pickup map, account) with Sync as a new tile. Pink `#EE018D`, purple `#5B2384`. `static/shell.js` is the app around Sync, `static/app.js` is Sync. Prices show as `JOD 1.25`. Keep the "student concept, not the official Jeeny app" note, and never put real people's details from screenshots in the repo. Bump `?v=` in both HTML files when JS or CSS changes
+- **Design:** looks like the Jeeny app (home, menu, pickup map, account) with Sync as a new tile. Pink `#EE018D`, purple `#5B2384`. `static/shell.js` is the app around Sync, `static/app.js` is Sync. Prices show as `JOD 1.25`. Font: Poppins (vendored), Inter as fallback. Keep the "student concept, not the official Jeeny app" note, and never put real people's details from screenshots in the repo. Bump `?v=` in both HTML files when JS or CSS changes
 - **Run:** `./run.sh` or `docker compose up --build`. **Test:** `.venv/bin/python -m pytest`
 - See `README.md` for the file map. `app/config.py` is the one config file.
 
