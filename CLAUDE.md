@@ -46,7 +46,7 @@ SHARED_SEAT_JD         = solo fare / riders   (1.25 JD with 4 riders, 1.67 with 
 2. **"You'll be late" check.** The student enters their lecture time, and the app compares it with the predicted bus arrival.
 3. **Sync a ride.** The app finds students near the user with the same destination and time window, then shows the pickup point, departure time, arrival time and price per seat. The user can join.
 4. **Women-only rides** toggle. Female riders are only matched with female riders.
-5. **Price comparison card:** bus (0.60), taxi to station + bus (~2.10), RideSync (~1.25), solo taxi (4–5)
+5. **Ride price:** shown on the Sync button, the ride and the joined ride. No comparison chart; after joining, the ride shows savings against taxi + bus and a solo taxi
 6. **Student verification** (mock: a university email domain check)
 
 ### Nice to have (only if Must-haves are done)
@@ -82,7 +82,7 @@ Real payments, real Jeeny API or dispatch integration, native apps, Saudi Arabia
 
 - One **FastAPI** app: API, ML (scikit-learn), matching, SQLite, and it serves the frontend
 - **Frontend:** mobile-first plain JS with Leaflet (vendored), no build step
-- **Design:** Jeeny colors, pink `#E5007D` and purple `#5B2384`, with the Inter font
+- **Design:** looks like the Jeeny app (home, menu, pickup map, account) with Sync as a new tile. Pink `#EE018D`, purple `#5B2384`. `static/shell.js` is the app around Sync, `static/app.js` is Sync. Prices show as `JOD 1.25`. Keep the "student concept, not the official Jeeny app" note, and never put real people's details from screenshots in the repo. Bump `?v=` in both HTML files when JS or CSS changes
 - **Run:** `./run.sh` or `docker compose up --build`. **Test:** `.venv/bin/python -m pytest`
 - See `README.md` for the file map. `app/config.py` is the one config file.
 
@@ -102,7 +102,7 @@ Keep everything runnable with **one command** (e.g. `docker compose up` or `npm 
 1. Ahmad opens RideSync and sees his 8:00 lecture at JUST.
 2. The map shows the next bus: predicted arrival 8:14 and 91% full, with a "You'll be late" warning.
 3. He taps "Sync a ride" and sees 3 students near him, leaving 7:20, arriving 7:48, at 1.25 JD each.
-4. He joins, and the price comparison shows his savings against the taxi-plus-bus combo and a solo taxi.
+4. He joins, and the ride shows his price and his savings against the taxi-plus-bus combo and a solo taxi.
 5. A female student turns on women-only and gets matched only with women.
 
 ## How judges score (prioritize accordingly)

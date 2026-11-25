@@ -14,6 +14,8 @@ Tests: `.venv/bin/pip install -r requirements-dev.txt && .venv/bin/python -m pyt
 | `app/matching.py` | AI 2: ride matching |
 | `app/main.py` | FastAPI endpoints, serves `static/` |
 | `scripts/generate_data.py` | Seeded synthetic students, bus history and demo scenario |
+| `static/shell.js` | Jeeny-style app around Sync: home, menu, pickup, account and simple pages |
+| `static/app.js` | Sync: bus forecast, matching, joined ride, tomorrow plan |
 | `static/trip.html`, `trip.js` | Family page for a shared trip |
 | `static/i18n.js` | Arabic texts |
 | `scripts/compare_gps.py` | Compare a recorded bus trip (GPX) with the simulated ones |

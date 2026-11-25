@@ -67,12 +67,12 @@ function logout() {
   me = null; store.set(null); seq++;
   running = false; joinedRide = null;
   $('login-error').textContent = '';
-  $('home').hidden = true; $('login').hidden = false;
+  lastCheck = null; offeredRide = null; reserved = null; account = {}; dest = null;
+  go('login');
 }
 
 // --- Home ---
 async function openHome() {
-  $('login').hidden = true; $('home').hidden = false;
   showMe();
   $('lecture').value = me.profile.lecture;
   $('hood').value = me.profile.hood;
@@ -80,6 +80,7 @@ async function openHome() {
   womenOnly = false;
   if (!map) initMap();
   map.invalidateSize();
+  go('launch');
   await restartClock();
 }
 
@@ -180,7 +181,6 @@ async function refresh() {
     buses = live.buses;
     showStatus(check, trip);
     drawMap(trip);
-    showPrices(cfg.prices, trip.campus);
     loadPlan();
   } catch (e) {
     if (mine === seq) { $('status').className = ''; $('status').replaceChildren(el('p', { className: 'error', textContent: t(e.message) })); }
@@ -201,7 +201,8 @@ function drawMap(trip, fit = true) {
   const c = cfg.campuses[trip.campus];
   marker([c.lat, c.lon], 'mk-campus', [icon('cap'), t(c.name.replace(' University', ''))], { interactive: false }).addTo(layer);
   drawRide();
-  if (fit) map.fitBounds([[h.lat, h.lon], [c.lat, c.lon], ...buses.filter((b) => b.campus === trip.campus).flatMap((b) => b.track.map((p) => p.slice(1)))],
+  updateShell();
+  if (fit && map.getSize().x) map.fitBounds([[h.lat, h.lon], [c.lat, c.lon], ...buses.filter((b) => b.campus === trip.campus).flatMap((b) => b.track.map((p) => p.slice(1)))],
     { paddingTopLeft: [44, 88], paddingBottomRight: [44, 92], maxZoom: 14 });
 }
 
@@ -211,7 +212,7 @@ function drawRide() { // meeting point and road path of the offered or joined ri
   const ride = joinedRide || offeredRide;
   if (!ride) return;
   rideLayer = L.layerGroup().addTo(layer);
-  L.polyline(ride.track.map((p) => p.slice(1)), { color: '#E5007D', weight: 4, opacity: 0.9, dashArray: '2 8' }).addTo(rideLayer);
+  L.polyline(ride.track.map((p) => p.slice(1)), { color: '#EE018D', weight: 4, opacity: 0.9, dashArray: '2 8' }).addTo(rideLayer);
   meetMarker = marker([ride.pickup.lat, ride.pickup.lon], 'mk-meet', [icon('pin')], { zIndexOffset: 400 }).addTo(rideLayer);
   if (joinedRide) carMarker = marker(positionAt(ride.track, simNow), 'mk-car', [icon('car')], { zIndexOffset: 600 }).addTo(rideLayer);
 }
@@ -275,6 +276,7 @@ function moveHead() { if (timeline) timeline.head.style.left = timeline.x(simNow
 
 function showStatus(c, trip) {
   lastCheck = c;
+  updateShell();
   const s = $('status');
   const b = c.bus;
   const canSync = cfg.sync_campuses.includes(trip.campus);
@@ -306,7 +308,7 @@ function showStatus(c, trip) {
   }
   if (!canSync) s.append(el('p', { className: 'sub', textContent: t('Shared rides are JUST-only in this pilot.') }));
   else if (!c.past && !offeredRide) {
-    const btn = el('button', { className: c.suggest_sync ? 'primary' : 'ghost', textContent: t('Sync a ride') });
+    const btn = el('button', { className: c.suggest_sync ? 'primary' : 'ghost', textContent: t('Sync a ride, from {price}', { price: money(cfg.prices.ridesync) }) });
     btn.onclick = () => sync(trip, btn);
     s.append(btn);
   }
@@ -362,6 +364,8 @@ function ticketTop(ride, title, badge) {
 const pickupLine = (ride) => el('p', { className: 'line' }, icon('walk'),
   t('{label}, about {n} m walk', { label: tPickup(ride.pickup.label), n: ride.pickup.walk_m }));
 
+const priceLine = (ride, text) => el('div', { className: 'price' },
+  el('b', {}, money(ride.seat_price)), el('span', { textContent: text }));
 const noteLine = (text) => (text ? el('p', { className: 'notice', role: 'status', textContent: text }) : null);
 
 function showRide(ride, trip) {
@@ -395,13 +399,10 @@ function showRide(ride, trip) {
     el('div', { className: 't-body' }, ...[
       noteLine(ride.earlier_min ? t('No car fits your exact time. This one arrives {n} min earlier.', { n: ride.earlier_min }) : ''),
       riders(ride), pickupLine(ride), womenToggle(trip),
-      el('div', { className: 'price' },
-        el('b', {}, ride.seat_price.toFixed(2), el('small', { textContent: lang === 'ar' ? 'د.أ' : 'JD' })),
-        el('span', { textContent: ride.riders > cfg.min_riders
-          ? t('At most {price} if someone drops out. Needs {n} riders.', { price: money(ride.max_seat_price), n: cfg.min_riders })
-          : t('The ride needs all {n} riders to go ahead.', { n: cfg.min_riders }) })),
+      priceLine(ride, ride.riders > cfg.min_riders
+        ? t('At most {price} if someone drops out. Needs {n} riders.', { price: money(ride.max_seat_price), n: cfg.min_riders })
+        : t('The ride needs all {n} riders to go ahead.', { n: cfg.min_riders })),
       join, err].filter(Boolean)));
-  showPrices(ride.prices, trip.campus);
 }
 
 function showJoined(scroll = true) {
@@ -422,13 +423,13 @@ function showJoined(scroll = true) {
     el('div', { className: 'perf' }),
     el('div', { className: 't-body' }, ...[
       noteLine(rideNote), riders(ride), pickupLine(ride),
+      priceLine(ride, t('Your seat, with {n} riders', { n: ride.riders })),
       el('div', { className: 'save' },
         el('div', {}, el('b', { textContent: money(p.saved_vs_taxi_plus_bus) }), t('saved vs. taxi + bus')),
         el('div', {}, el('b', { textContent: money(p.saved_vs_solo_taxi) }), t('saved vs. solo taxi'))),
       shareBox(), play,
       el('div', { className: 'acts', id: 'acts' }, leave, drop), err].filter(Boolean)));
   drawRide();
-  showPrices(p, ride.campus);
   updateJoined();
   if (scroll) $('sheet').scrollTo({ top: 0, behavior: reducedMotion.matches ? 'auto' : 'smooth' });
 }
@@ -454,11 +455,11 @@ function afterDropout(r) {
   joinedRide = null; offeredRide = null; shareToken = null;
   drawRide();
   showStatus(lastCheck, currentTrip()); // Sync button comes back
-  showPrices(cfg.prices, currentTrip().campus);
   $('ride').className = 'plain';
   $('ride').replaceChildren(noteLine(t('{a} dropped out, so fewer than {n} riders were left and the ride was cancelled. No charge.', { a, n })));
 }
 function updateJoined() { // runs every simulated minute: text and car only, no rebuild
+  updateShell();
   const ride = joinedRide, go = toMin(ride.depart), end = toMin(ride.arrive);
   $('t-text').textContent = simNow < go ? t("You're in. Be there by {t}", { t: ride.depart })
     : simNow < end ? t('On your way') : t("You've arrived");
@@ -590,20 +591,6 @@ function showPlan() {
   box.replaceChildren(...kids);
 }
 
-// --- Prices ---
-function showPrices(p, campus) {
-  if (!cfg.sync_campuses.includes(campus)) { $('prices').replaceChildren(); return; }
-  const rows = [['Bus only', p.bus, money(p.bus)], ['RideSync', p.ridesync, money(p.ridesync)], ['Taxi + bus', p.taxi_plus_bus, money(p.taxi_plus_bus)],
-    ['Solo taxi', p.solo_taxi, ltr(`${p.solo_taxi_min.toFixed(0)}–${p.solo_taxi_max.toFixed(0)}`) + (lang === 'ar' ? ' د.أ' : ' JD')]];
-  $('prices').replaceChildren(el('h3', { textContent: t('What the trip costs') }),
-    el('div', { className: 'bars' }, ...rows.map(([name, v, text]) => {
-      const fill = el('div', { className: 'fill' });
-      fill.style.width = (v / p.solo_taxi) * 100 + '%';
-      return el('div', { className: 'bar' + (name === 'RideSync' ? ' us' : '') },
-        el('span', { textContent: t(name) }), el('div', { className: 'track' }, fill), el('span', { textContent: text }));
-    })),
-    el('p', { className: 'note', textContent: t('RideSync price with {n} riders.', { n: p.riders }) }));
-}
 function fillSelects() {
   const keep = [$('hood').value, $('campus').value];
   $('hood').replaceChildren(...cfg.hoods.map((h) => el('option', { value: h.id, textContent: t(h.name) })));
@@ -612,23 +599,23 @@ function fillSelects() {
 }
 function rerender() { // language change: same state, new words
   $('restart').ariaLabel = $('restart').title = t('Restart the demo clock');
-  $('logout').ariaLabel = t('Switch student');
   if (!cfg) return;
   fillSelects();
-  if (!me || $('home').hidden || !lastCheck) return;
+  if (!me || !lastCheck) return;
   const trip = currentTrip();
   rideNote = ''; // already shown in the other language
   showMe(); showPlan(); drawMap(trip, false);
   if (joinedRide) { showStatus(lastCheck, trip); showJoined(false); }
   else if (offeredRide || $('ride').children.length) showRide(offeredRide, trip);
-  else { showStatus(lastCheck, trip); showPrices(cfg.prices, trip.campus); }
+  else showStatus(lastCheck, trip);
+  rerenderShell();
 }
 
 async function start() {
   applyLang();
   document.querySelectorAll('[data-lang]').forEach((b) => { b.onclick = () => toggleLang(rerender); });
-  try { cfg = await api('api/config'); } catch (e) { $('login').hidden = false; $('login-error').textContent = t(e.message); return; }
-  fillSelects(); rerender();
+  try { cfg = await api('api/config'); } catch (e) { $('splash').remove(); show('login'); $('login-error').textContent = t(e.message); return; }
+  initShell(); fillSelects(); rerender();
   for (const id of ['lecture', 'hood', 'campus']) $(id).addEventListener('change', refresh);
   $('logout').onclick = logout;
   $('restart').onclick = () => { restartClock(); };
@@ -636,6 +623,6 @@ async function start() {
   document.querySelectorAll('[data-demo]').forEach((b) => { b.onclick = () => verify(b.dataset.demo); });
   new ResizeObserver(() => map && map.invalidateSize()).observe($('map'));
   me = store.get();
-  if (me && me.session && me.profile) await openHome(); else { me = null; $('login').hidden = false; }
+  if (me && me.session && me.profile) await openHome(); else { me = null; go('login'); }
 }
 start();

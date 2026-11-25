@@ -40,7 +40,7 @@ function drawOnce() {
   map.attributionControl.setPrefix('');
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(map);
   const path = trip.track.map((p) => p.slice(1));
-  L.polyline(path, { color: '#E5007D', weight: 5, opacity: 0.85 }).addTo(map);
+  L.polyline(path, { color: '#EE018D', weight: 5, opacity: 0.85 }).addTo(map);
   marker(path[0], 'mk-meet', [icon('pin')]).addTo(map);
   marker(path[path.length - 1], 'mk-campus', [icon('cap'), trip.campus]).addTo(map);
   car = marker(path[0], 'mk-car', [icon('car')]).addTo(map);
