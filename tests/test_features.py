@@ -257,3 +257,12 @@ def test_map_key_comes_only_from_the_environment(api, monkeypatch):
     assert api.get("/api/map").json() == {"google_key": ""}
     monkeypatch.setattr(c, "GOOGLE_MAPS_KEY", "demo")
     assert api.get("/api/map").json() == {"google_key": "demo"}
+
+
+def test_share_url_for_the_in_app_qr_code(api, monkeypatch):
+    monkeypatch.setattr(c, "PUBLIC_URL", "")
+    monkeypatch.setattr("app.main.lan_ip", lambda: "192.168.1.25")
+    assert api.get("http://localhost:8000/api/config").json()["share_url"] == "http://192.168.1.25:8000/"
+    assert api.get("http://10.0.0.9:8000/api/config").json()["share_url"] == "http://10.0.0.9:8000/"  # opened from the network already
+    monkeypatch.setattr(c, "PUBLIC_URL", "https://ridesync.example.com/")
+    assert api.get("http://localhost:8000/api/config").json()["share_url"] == "https://ridesync.example.com/"

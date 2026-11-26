@@ -20,7 +20,7 @@ CREATE TABLE dropped (session TEXT, student INTEGER, PRIMARY KEY (session, stude
 CREATE TABLE reports (
   session TEXT, bus TEXT, minute REAL, from_stop INTEGER, filling INTEGER, occ REAL, PRIMARY KEY (session, bus, minute));
 CREATE TABLE chat (
-  seq INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT, ride TEXT, who TEXT, text TEXT);
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT, ride TEXT, who TEXT, text TEXT, at TEXT);
 """
 
 

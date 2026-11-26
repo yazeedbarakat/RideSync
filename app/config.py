@@ -12,6 +12,7 @@ ROUTES_PATH = ROOT / "data" / "routes.json"
 RIDE_PATHS_PATH = ROOT / "data" / "ride_paths.json"
 
 GOOGLE_MAPS_KEY = os.getenv("GOOGLE_MAPS_KEY", "").strip()  # empty = OpenStreetMap
+PUBLIC_URL = os.getenv("PUBLIC_URL", "").strip()  # the address phones should open; empty = this computer on the local network
 
 # --- Fare: LTRC smart-app tariff (yellow-taxi meter + 20%), effective 11 May 2026 ---
 # One trip, one fare. The riders split that fare; we never sell per-seat fares.

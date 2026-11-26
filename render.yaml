@@ -8,5 +8,7 @@ services:
     envVars:
       - key: DEMO_NOW
         value: "06:10"
+      - key: PUBLIC_URL  # your Render address, for the in-app QR code
+        sync: false
       - key: GOOGLE_MAPS_KEY
         sync: false  # typed into the Render dashboard, never committed
