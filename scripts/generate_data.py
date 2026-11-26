@@ -1,4 +1,4 @@
-"""Build data/ridesync.db: synthetic students, bus history and the demo scenario.
+"""Build data/ridesync.db: synthetic riders, bus history and the demo scenario.
 
 Everything is seeded, so the demo is identical on every run. All data is synthetic.
 Run: python -m scripts.generate_data
@@ -83,10 +83,10 @@ def make_history(rng, routes):
 # crowding shown in the demo are predicted from them by the model.
 # id, route, from_stop, filling, minute observed, minutes since opened, occupancy, rain, dow
 LIVE_BUSES = [
-    ("B1", "R1", 1, 0, 421, 33, 0.96, 0, 1),
-    ("B2", "R2", 0, 1, 425, 4, 0.22, 0, 1),
-    ("B3", "R3", 1, 0, 423, 25, 0.82, 0, 1),
-    ("B4", "R3", 0, 1, 425, 8, 0.34, 0, 1),
+    ("B1", "R1", 1, 0, 421, 33, 0.96, 0, c.DEMO_DOW),
+    ("B2", "R2", 0, 1, 425, 4, 0.22, 0, c.DEMO_DOW),
+    ("B3", "R3", 1, 0, 423, 25, 0.82, 0, c.DEMO_DOW),
+    ("B4", "R3", 0, 1, 425, 8, 0.34, 0, c.DEMO_DOW),
 ]
 
 
@@ -104,23 +104,19 @@ def make_students(rng, n=400):
         lecture = rng.choices([480, 540, 570, 660], [40, 25, 20, 15])[0]
         out.append((rng.choice(FEMALE if gender == "F" else MALE), gender, hood,
                     *jitter(rng, lat, lon, 350), rng.choices(["JUST", "YU"], [65, 35])[0], lecture,
-                    lecture - rng.choice([5, 10, 10, 15, 20]), int(gender == "F" and rng.random() < 0.35)))
+                    lecture - rng.choice([5, 10, 10, 15, 20])))
+        if gender == "F":
+            rng.random()  # was the women-only draw; kept so every seeded rider stays the same
     # Seeded neighbours so the two demo personas always have a full car available.
     _, lat, lon = c.HOODS["andalus"]
-    for name, g, dlat, dlon, want, wo in [
-        ("Omar", "M", .0006, .0005, 468, 0), ("Rania", "F", -.0005, .0007, 470, 0),
-        ("Zaid", "M", .0004, -.0008, 472, 0),
-        ("Dana", "F", -.0012, -.0010, 469, 1), ("Aya", "F", .0013, .0011, 471, 1),
-        ("Tala", "F", -.0011, .0014, 470, 0),
+    for name, g, dlat, dlon, want in [
+        ("Omar", "M", .0006, .0005, 468), ("Rania", "F", -.0005, .0007, 470),
+        ("Zaid", "M", .0004, -.0008, 472),
+        ("Dana", "F", -.0012, -.0010, 469), ("Aya", "F", .0013, .0011, 471),
+        ("Tala", "F", -.0011, .0014, 470),
     ]:
-        out.append((name, g, "andalus", lat + dlat, lon + dlon, "JUST", 480, want, wo))
+        out.append((name, g, "andalus", lat + dlat, lon + dlon, "JUST", 480, want))
     return [(i + 1, *s) for i, s in enumerate(out)]
-
-
-REGISTRY = [  # mock university registry: gender comes from here, never from the client
-    ("ahmad@cit.just.edu.jo", "Ahmad", "M", "andalus", "08:00"),
-    ("lina@cit.just.edu.jo", "Lina", "F", "andalus", "08:00"),
-]
 
 
 def build():
@@ -140,7 +136,6 @@ def build():
     students = make_students(rng)
     insert("students", students)
     insert("live_buses", LIVE_BUSES)
-    insert("registry", REGISTRY)
     con.commit()
     con.close()
     os.replace(tmp, c.DB_PATH)  # atomic: never leave a half-built database behind

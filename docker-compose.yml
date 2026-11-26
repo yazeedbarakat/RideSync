@@ -3,5 +3,6 @@ services:
     build: .
     ports: ["${PORT:-8000}:8000"]
     environment:
-      DEMO_NOW: "${DEMO_NOW:-07:05}"
+      DEMO_NOW: "${DEMO_NOW:-06:10}"
+      GOOGLE_MAPS_KEY: "${GOOGLE_MAPS_KEY:-}"
       PORT: "8000"
