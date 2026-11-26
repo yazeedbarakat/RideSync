@@ -65,7 +65,7 @@ function logout() {
   me = null; store.set(null); seq++;
   running = false; joinedRide = null;
   $('login-error').textContent = '';
-  ready = false; offeredRide = null; reserved = null; account = {}; dest = null;
+  ready = false; offeredRide = null; reserved = null; account = {}; dest = null; booked = null; normalTrip = null;
   go('login');
 }
 
@@ -151,7 +151,7 @@ async function refresh() {
   joinedRide = null; // changing the trip leaves the joined-ride view
   offeredRide = null; playing = false; rideNote = ''; driverOffer = null;
   $('ride').replaceChildren(); $('ride').className = '';
-  hideChat();
+  resetChat();
   ready = true;
   fromPrice = null;
   showBook(trip);
@@ -275,9 +275,10 @@ function showRide(ride, trip) {
     try {
       const r = await api(`api/rides/${encodeURIComponent(ride.id)}/join`, { now: hhmm(simNow) });
       if (mine !== seq) return;
-      joinedRide = r.ride; rideNote = ''; playing = false; balance = 0; chatSeq = 0;
-      showChat(r.chat);
+      joinedRide = r.ride; rideNote = ''; playing = false; balance = 0;
+      resetChat(); addChat(r.chat);
       showJoined();
+      go('ridescreen');
     } catch (e) { err.textContent = e.message; join.disabled = false; }
   };
   box.replaceChildren(
@@ -291,93 +292,214 @@ function showRide(ride, trip) {
       balanceLine(), join, err));
 }
 
-// --- Joined ride, by state ---
-const TITLES = {
-  OPEN: (r) => t('You\'re in. Be ready by {t}', { t: r.depart }),
-  READY_CHECK: () => 'Ready check',
-  DISPATCHED: () => 'Finding your driver',
-  ACCEPTED: (r) => t('{name} picks you up at {t}', { name: r.driver.name, t: r.depart }),
-  IN_PROGRESS: () => 'On your way',
-  COMPLETED: (r) => t('Arrived at {campus}', { campus: r.campus }),
-  CANCELED: () => 'Ride cancelled',
-};
+// --- Ride screen: map + status sheet, ported from NextStop web/src/screens/Status.tsx ---
+const t12 = (s) => { const [h, m] = s.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+const mmss = (sec) => `${Math.floor(Math.max(0, sec) / 60)}:${String(Math.floor(Math.max(0, sec) % 60)).padStart(2, '0')}`;
+const readyCount = (r) => (r.ready_check && r.ready_check.me ? 1 : 0) + r.others.filter((o) => o.ready).length;
+const STAGE = { OPEN: 0, READY_CHECK: 1, DISPATCHED: 2, ACCEPTED: 3, IN_PROGRESS: 3 };
+let rmap = null, rpins = null, sheetKind = null, leftSummary = null;
+
 function button(text, fn, cls = 'primary', ic) {
   const b = el('button', { className: cls }, ic ? icon(ic) : null, text);
   b.onclick = fn;
   return b;
 }
-function showJoined(scroll = true) {
-  const ride = joinedRide, box = $('ride');
-  chatLock();
-  if (ride.state === 'COMPLETED') { showSummary(); return; }
-  box.className = 'confirmed in';
-  const err = el('p', { className: 'error', role: 'alert' });
-  const act = (name, body = {}) => rideAction(name, body, err);
-  const last = ride.others.length ? ride.others[ride.others.length - 1].name : null;
-  const demo = [];
-  if (last && LIVE.slice(0, 4).includes(ride.state)) demo.push(button(t('Demo: {name} leaves', { name: last }), () => act('dropout'), 'quiet demo'));
-  if (ride.state === 'ACCEPTED' && simNow < toMin(ride.late_from)) {
-    demo.push(button(t('Demo: skip to {t}', { t: hhmm(toMin(ride.late_from) + 5) }), () => { simNow = toMin(ride.late_from) + 5; lastMinute = -1; lastPoll = 0; }, 'quiet demo'));
-  }
-  if (['ACCEPTED', 'IN_PROGRESS'].includes(ride.state)) demo.push(button('Demo: complete trip', () => act('complete'), 'quiet demo'));
-  const leave = LIVE.slice(0, 4).includes(ride.state)
-    ? button(ride.leave_cost ? t('Leave ride ({price})', { price: money(ride.leave_cost) }) : 'Leave ride (free)', () => confirmLeave(err), 'quiet') : null;
-
-  const body = [noteLine(rideNote), riders(ride), pickupLine(ride), genderLine()];
-  if (ride.state === 'OPEN') {
-    body.push(priceLine(ride, fareText(ride)), savedLine(ride),
-      el('p', { className: 'sub', textContent: t('Joining stays open until {t}. Tap Find driver when your group is set.', { t: ride.join_closes }) }),
-      button('Find driver', () => act('find-driver'), 'primary', 'car'));
-  } else if (ride.state === 'READY_CHECK') {
-    const answered = ride.ready_check.me;
-    body.unshift(el('div', { className: 'ready' }, el('b', { textContent: answered ? 'Waiting for the others' : 'Are you ready?' }),
-      el('span', { textContent: t('Pickup at {t} is now final. No answer by {e} counts as ready.', { t: ride.depart, e: ride.ready_check.ends }) }),
-      answered ? null : el('div', { className: 'acts wide' }, button("I'm ready", () => act('ready', { ready: true }), 'primary', 'check'),
-        button('Cancel ride for me', () => act('ready', { ready: false }), 'quiet'))));
-    body.push(priceLine(ride, fareText(ride)));
-  } else if (ride.state === 'DISPATCHED') {
-    body.push(el('p', { className: 'sub', textContent: t('Your pickup at {t} is final. Joining is closed.', { t: ride.depart }) }),
-      priceLine(ride, fareText(ride)), button("Demo: open the driver's app", openDriver, 'ghost', 'car'));
-  } else if (ride.state === 'ACCEPTED' || ride.state === 'IN_PROGRESS') {
-    body.splice(1, 0, el('div', { className: 'driver' }, el('span', { className: 'av v3', textContent: ride.driver.name[0] }),
-      el('span', {}, el('b', { textContent: ride.driver.name }), el('small', { textContent: ride.driver.car + ' · ' + ride.driver.plate }))));
-    body.push(priceLine(ride, t('cash to the driver at drop-off. {n} riders.', { n: ride.riders })), savedLine(ride),
-      ride.state === 'ACCEPTED' && !playing ? button('Play the trip', () => { playing = true; showJoined(false); }, 'primary', 'play') : null,
-      ride.state === 'ACCEPTED' && !ride.leave_cost ? el('p', { className: 'sub', textContent: t('Leaving is free until {t}. After that you pay your own share.', { t: ride.late_from }) }) : null,
-      button("Demo: open the driver's app", openDriver, 'ghost', 'car'));
-  } else if (ride.state === 'CANCELED') {
-    body.push(noteLine(ride.cancel_reason), button('Sync again', () => refresh(), 'primary'));
-  }
-  if (ride.balance_added) body.push(el('p', { className: 'line' }, icon('wallet'), t('Plus your outstanding balance of {price}', { price: money(ride.balance_added) })));
-  body.push(el('div', { className: 'acts', id: 'acts' }, leave, ...demo), err);
-  box.replaceChildren(ticketTop(ride, TITLES[ride.state](ride), ride.state !== 'CANCELED'), el('div', { className: 'perf' }), el('div', { className: 't-body' }, ...body));
-  drawRide();
-  updateJoined();
-  if (scroll) $('sheet').scrollTo({ top: 0, behavior: reducedMotion.matches ? 'auto' : 'smooth' });
+const initial = (name) => (name === 'You' ? me.profile.first_name : name)[0];
+function avatar(name, size = 48, dot) {
+  return el('div', { className: 'avatar', style: `width:${size}px;height:${size}px;font-size:${size * 0.36}px;border-radius:${size <= 32 ? 10 : 12}px` }, initial(name),
+    dot ? el('span', { className: 'status-dot ' + dot }, dot === 'ready' ? icon('check') : null) : null);
 }
-const savedLine = (ride) => el('div', { className: 'save' },
-  el('div', {}, el('b', { textContent: money(ride.saved) }), t('saved vs. riding alone ({price})', { price: money(ride.solo) })));
+function seatRow(ride, size = 48) { // NextStop SeatRow: 4 slots
+  const closed = ride.state !== 'OPEN', showReady = ride.state === 'READY_CHECK' && size >= 40;
+  const names = ['You', ...ride.others.map((o) => o.name)];
+  const slots = [];
+  for (let i = 0; i < 4; i++) {
+    if (i < names.length) {
+      const ready = i ? ride.others[i - 1].ready : ride.ready_check && ride.ready_check.me;
+      slots.push(el('div', { className: 'seat' }, avatar(names[i], size, showReady ? (ready ? 'ready' : 'waiting') : null)));
+    } else {
+      slots.push(el('div', { className: 'seat-empty' + (closed ? ' seat-closed' : ''), style: `width:${size}px;height:${size}px;border-radius:${size < 32 ? 8 : 12}px` }, closed ? null : icon('plus')));
+    }
+  }
+  return el('div', { className: 'seat-row', style: `gap:${size < 32 ? 6 : 12}px` }, ...slots);
+}
+const arriveBy = () => $('lecture').value || cfg.default_lecture;
 
-function showSummary() {
-  const s = joinedRide.summary, box = $('ride');
-  box.className = 'confirmed in';
-  box.replaceChildren(ticketTop(joinedRide, TITLES.COMPLETED(joinedRide), true), el('div', { className: 'perf' }), el('div', { className: 't-body' },
-    el('div', { className: 'summary' },
-      el('div', {}, el('small', { textContent: 'Arrived' }), el('b', { textContent: s.arrived })),
-      el('div', {}, el('small', { textContent: 'You paid (cash)' }), el('b', { textContent: money(s.paid) })),
-      el('div', {}, el('small', { textContent: 'Shared by' }), el('b', { textContent: t('{n} riders', { n: s.riders }) })),
-      el('div', {}, el('small', { textContent: 'Saved vs. alone' }), el('b', { textContent: money(s.saved) }))),
-    el('p', { className: 'line' }, icon('car'), s.credit
-      ? t('{name} got {cash} cash + {credit} credit = {total}', { name: s.driver, cash: money(s.cash), credit: money(s.credit), total: money(s.driver_total) })
-      : t('{name} got {cash} cash', { name: s.driver, cash: money(s.cash) })),
-    button('Book another ride', () => restartClock(), 'quiet')));
+function showJoined() { // re-render whatever shows the joined ride
+  chatLock();
+  homeCard();
+  if (view === 'ridescreen') renderRide();
+  if (view === 'chatscreen') $('chat-seats').replaceChildren(seatRow(joinedRide, 24));
   updateShell();
 }
+function homeCard() { // on the booking screen: a link to the ride screen
+  const ride = joinedRide, box = $('ride');
+  if (!ride) return;
+  box.className = 'plain in';
+  box.replaceChildren(el('h3', { textContent: ride.state === 'COMPLETED' ? 'Your ride is done' : 'You have a shared ride' }),
+    el('p', { className: 'sub', textContent: t('Pickup {t} · {price} each', { t: t12(ride.depart), price: money(ride.share) }) }),
+    button('Open ride', () => go('ridescreen'), 'primary'));
+}
+function openRide() {
+  if (!joinedRide && !leftSummary) { show('home'); return; }
+  if (!rmap) {
+    rmap = L.map('rmap', { zoomControl: false, attributionControl: true });
+    baseMap(rmap);
+    rpins = L.layerGroup().addTo(rmap);
+  }
+  rmap.invalidateSize();
+  renderRide();
+}
+function drawRideMap(ride) { // rider map: only your own pickup and the destination (NextStop SPEC §3.14)
+  rpins.clearLayers();
+  const c = cfg.campuses[ride.campus];
+  const p = [ride.pickup.lat, ride.pickup.lon], d = [c.lat, c.lon];
+  L.circleMarker(p, { radius: 9, color: '#fff', weight: 2, fillColor: '#EE018D', fillOpacity: 1 }).addTo(rpins);
+  L.circleMarker(d, { radius: 9, color: '#fff', weight: 2, fillColor: '#6B2D8F', fillOpacity: 1 }).addTo(rpins);
+  rmap.fitBounds([p, d], { padding: [40, 40] });
+  $('rpulse').hidden = !['OPEN', 'DISPATCHED'].includes(ride.state);
+}
 
-async function rideAction(name, body, err) {
+function renderRide() {
+  const screen = $('ridescreen');
+  $('rclock').textContent = t12(hhmm(simNow));
+  if (leftSummary || !joinedRide || ['COMPLETED', 'CANCELED'].includes(joinedRide.state)) { renderSummary(); return; }
+  screen.classList.remove('summary');
+  const ride = joinedRide, n = ride.riders, stage = STAGE[ride.state];
+  if (screen.dataset.state !== ride.state) { screen.dataset.state = ride.state; screen.querySelector('.scroll').scrollTop = 0; }
+  const [title, sub] = ({
+    OPEN: () => ['Waiting for riders', `${n} of 4 seats filled`],
+    READY_CHECK: () => ['Ready check', `${readyCount(ride)} of ${n} ready · ${mmss((toMin(ride.ready_check.ends) - simNow) * 60)} left`],
+    DISPATCHED: () => ['Finding your driver', 'Your ride is set'],
+  }[ride.state] || (() => ['Driver on the way', `${ride.driver.name} · ${ride.driver.car} · ${ride.driver.plate.replace('-', '‑')}`]))();
+  $('st-head').hidden = false;
+  $('st-title').textContent = title;
+  $('st-sub').textContent = sub;
+  $('st-progress').replaceChildren(...[0, 1, 2, 3].map((i) => el('span', { className: (i <= stage ? 'on' : '') + (i === stage && stage < 3 ? ' now' : '') })));
+
+  const lastMsg = chatLog[chatLog.length - 1];
+  const chat = el('button', { className: 'card', id: 'chatcard' },
+    el('div', { className: 'row' }, icon('chat'), el('span', { className: 'grow', textContent: 'Group chat' }),
+      unread ? el('span', { className: 'badge', textContent: String(unread) }) : null, icon('next')),
+    lastMsg ? el('div', { className: 'body muted truncate', textContent: (lastMsg.who ? `${lastMsg.who === me.profile.first_name ? 'You' : lastMsg.who}: ` : '') + lastMsg.text }) : null);
+  chat.onclick = () => go('chatscreen');
+  const leave = el('button', { className: 'card row leave' }, icon('nocar'), el('span', { textContent: 'Leave ride' }));
+  leave.onclick = () => openSheet('leave');
+  $('st-cards').replaceChildren(...[
+    rideNote ? el('div', { className: 'card note', textContent: rideNote }) : null,
+    el('div', { className: 'card' }, seatRow(ride),
+      el('div', { className: 'body-l seatline' }, `${n} of 4 seats filled · `, el('span', { className: 'accent', textContent: money(ride.share) }), ' each')),
+    chat,
+    el('div', { className: 'card info' },
+      el('div', { className: 'info-row lead' }, icon('clock'), el('span', { className: 'val', textContent: t('Be ready by {t} · {m} m walk', { t: t12(ride.depart), m: ride.pickup.walk_m }) })),
+      el('div', { className: 'info-row from' }, icon('pin'), el('div', { className: 'truncate' }, el('div', { className: 'lbl', textContent: 'Start Location' }), el('div', { className: 'val truncate', textContent: tPickup(ride.pickup.label) }))),
+      el('div', { className: 'info-row to' }, icon('pin'), el('div', { className: 'truncate' }, el('div', { className: 'lbl', textContent: 'Your Destination' }), el('div', { className: 'val truncate', textContent: cfg.campuses[ride.campus].name })))),
+    el('div', { className: 'card' }, el('div', { className: 'body muted', textContent: 'Booking Details' }),
+      el('div', { className: 'row mt8' }, el('span', { className: 'car-tile' }, icon('users')), el('span', { className: 'grow big', textContent: 'Shared' }), el('span', { className: 'body muted', textContent: t('Arrive by {t}', { t: t12(arriveBy()) }) })),
+      el('div', { className: 'row mt8' }, el('span', { className: 'car-tile cash' }, icon('cash')), el('span', { className: 'big', textContent: 'Cash' }))),
+    ['OPEN', 'READY_CHECK', 'DISPATCHED', 'ACCEPTED'].includes(ride.state) ? leave : null,
+  ].filter(Boolean));
+  const actions = $('st-actions');
+  actions.replaceChildren(...(ride.state === 'OPEN'
+    ? [el('div', { className: 'hint', textContent: t('Starts automatically at {t}', { t: t12(ride.join_closes) }) }), button('Find driver', () => act('find-driver'))]
+    : []));
+  actions.hidden = !actions.children.length;
+  drawRideMap(ride);
+  // Sheets follow the ride: the ready check opens for everyone and closes when the ride goes to drivers
+  if (ride.state === 'READY_CHECK') openSheet('ready');
+  else if (sheetKind === 'ready' || (sheetKind === 'leave' && !['OPEN', 'DISPATCHED', 'ACCEPTED'].includes(ride.state))) closeSheet();
+  else if (sheetKind) openSheet(sheetKind);
+}
+
+function renderSummary() { // NextStop web/src/screens/Summary.tsx
+  const screen = $('ridescreen'), ride = joinedRide;
+  screen.classList.add('summary');
+  closeSheet();
+  $('st-head').hidden = true;
+  const s = ride && ride.summary, left = leftSummary, canceled = ride && ride.state === 'CANCELED' && !left;
+  const ok = !!s && !left;
+  const title = ok ? 'You’ve arrived' : left ? 'You left this ride' : 'Ride canceled';
+  const card = el('div', { className: 'card card-border sum' });
+  if (ok) {
+    card.append(el('div', { className: 'body muted', textContent: 'You paid' }), el('div', { className: 'display', textContent: money(s.paid) }),
+      el('div', { className: 'row body-l' }, el('span', { className: 'cashico' }, icon('cash')), 'Cash'), el('div', { className: 'divider' }),
+      el('div', { className: 'row-between' }, el('span', { className: 'body text-700', textContent: `${s.riders} riders shared this ride` }), seatRow({ ...ride, state: 'COMPLETED' }, 24)),
+      s.saved ? el('p', { className: 'body success-text saved', textContent: `You saved ${money(s.saved)} vs riding solo` }) : null);
+  } else if (left) {
+    card.append(left.late ? el('p', { className: 'body-l danger-text m0', textContent: `${money(left.charge)} added to your next ride` })
+      : el('p', { className: 'body-l text-700 m0', textContent: 'Leaving was free.' }));
+  } else {
+    card.append(el('p', { className: 'body-l text-700 m0', textContent: (ride.cancel_reason || 'This ride was canceled.') + ' You can book a new ride any time.' }));
+  }
+  const kids = [el('div', { className: 'success-circle' + (ok ? '' : ' off') }, icon(ok ? 'checkc' : 'nocar')),
+    el('h1', { className: 'h1 center', textContent: title }),
+    el('p', { className: 'body muted center sumsub', textContent: ok ? `To ${cfg.campuses[ride.campus].name} · arrived ${t12(s.arrived)}` : canceled ? 'No fees were charged.' : `To ${cfg.campuses[(ride || left.ride).campus].name}` }),
+    card];
+  if (ok) kids.push(el('div', { className: 'card card-border sum drv' }, el('div', { className: 'body muted', textContent: `${s.driver} (driver)` }),
+    el('div', { className: 'row-between body' }, el('span', { textContent: `Cash from ${s.riders} riders` }), el('span', { textContent: money(s.cash) })),
+    s.credit ? el('div', { className: 'row-between body' }, el('span', { textContent: 'Credit from Jeeny' }), el('span', { textContent: money(s.credit) })) : null,
+    el('div', { className: 'divider' }), el('div', { className: 'row-between total' }, el('span', { textContent: 'Total' }), el('span', { textContent: money(s.driver_total) }))));
+  if (ride && chatLog.length) kids.push(chatLink());
+  $('st-cards').replaceChildren(...kids);
+  const done = button('Done', () => { leftSummary = null; restartClock(); go('home', true); });
+  $('st-actions').replaceChildren(...[balance ? el('div', { className: 'balance-strip' }, icon('wallet'), `Outstanding balance ${money(balance)}`) : null, done].filter(Boolean));
+  $('st-actions').hidden = false;
+}
+const chatLink = () => { const b = el('button', { className: 'card row' }, icon('chat'), el('span', { className: 'grow', textContent: 'Group chat' }), icon('next')); b.onclick = () => go('chatscreen'); return b; };
+
+// --- Bottom sheets (NextStop components/ui.tsx BottomSheet) ---
+function openSheet(kind) {
+  sheetKind = kind;
+  const body = kind === 'ready' ? readySheet() : kind === 'leave' ? leaveSheet() : demoSheet();
+  $('ns-sheet-body').replaceChildren(...body);
+  $('ns-sheet').hidden = false;
+  $('ns-scrim').onclick = kind === 'ready' ? null : closeSheet; // the ready check needs an answer
+}
+function closeSheet() { sheetKind = null; $('ns-sheet').hidden = true; }
+
+function readySheet() {
+  const ride = joinedRide, rc = ride.ready_check, total = 5 * 60;
+  const left = Math.max(0, (toMin(rc.ends) - simNow) * 60);
+  const r = 44, c = 2 * Math.PI * r;
+  const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 96 96');
+  svg.innerHTML = `<circle cx="48" cy="48" r="${r}" fill="none" stroke="var(--gray-200)" stroke-width="4"/><circle cx="48" cy="48" r="${r}" fill="none" stroke="${left < 60 ? 'var(--amber-500)' : 'var(--pink)'}" stroke-width="4" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - left / total)}"/>`;
+  const rows = [['You', rc.me], ...ride.others.map((o) => [o.name, o.ready])].map(([n, ok]) =>
+    el('div', { className: 'row-between rrow' }, el('div', { className: 'row' }, avatar(n, 32), el('span', { className: 'body-l fw5', textContent: n === 'You' ? me.profile.first_name : n })),
+      el('span', { className: 'body fw5 ' + (ok ? 'success-text' : 'muted'), textContent: ok ? 'Ready ✓' : 'Waiting…' })));
+  return [el('h2', { className: 'h2', textContent: 'Ready to find a driver?' }),
+    el('p', { className: 'body muted m0', textContent: 'You started the ready check. No answer counts as ready.' }),
+    el('div', { className: 'ring' + (left < 60 ? ' low' : '') }, svg, el('span', { className: 'display', textContent: mmss(left) })),
+    el('div', {}, ...rows),
+    ...(rc.me ? [el('p', { className: 'body success-text center fw5', textContent: 'You’re ready. Waiting for others…' })]
+      : [button('I’m ready', () => act('ready', { ready: true })), button('Cancel ride for me', () => act('ready', { ready: false }), 'btn btn-secondary'),
+        el('p', { className: 'small muted center m0 fw4', textContent: 'Leaving now is free.' })])];
+}
+function leaveSheet() { // NextStop LeaveSheet
+  const cost = joinedRide.leave_cost;
+  return [el('h2', { className: 'h2', textContent: 'Leave this ride?' }),
+    ...(cost ? [el('p', { className: 'body text-700 m0', textContent: 'Your driver is already booked and pickup is in less than 30 minutes.' }),
+      el('div', { className: 'amount-box' }, el('span', { className: 'body text-700', textContent: 'You’ll pay your share' }), el('span', { className: 'danger-text amount', textContent: money(cost) })),
+      el('p', { className: 'small muted m0 fw4', textContent: 'Added as an outstanding balance on your next ride.' })]
+      : [el('p', { className: 'body text-700 m0', textContent: 'Leaving now is free. Others’ shares will update.' })]),
+    button('Keep my seat', closeSheet),
+    button(cost ? 'Leave anyway' : 'Leave ride', () => { closeSheet(); act('leave'); }, 'btn btn-secondary btn-danger')];
+}
+function demoSheet() { // the hidden demo menu: plain, not part of the Jeeny look
+  const ride = joinedRide, items = [];
+  const add = (label, fn) => items.push(button(label, () => { closeSheet(); fn(); }, 'demo-btn'));
+  if (ride && ride.state === 'ACCEPTED' && !playing) add('Play the trip', () => { playing = true; renderRide(); });
+  if (ride && ['DISPATCHED', 'ACCEPTED', 'IN_PROGRESS'].includes(ride.state)) add("Open the driver's app", openDriver);
+  const last = ride && ride.others.length ? ride.others[ride.others.length - 1].name : null;
+  if (last && ['OPEN', 'READY_CHECK', 'DISPATCHED', 'ACCEPTED'].includes(ride.state)) add(`${last} leaves`, () => act('dropout'));
+  if (ride && ride.state === 'ACCEPTED' && simNow < toMin(ride.late_from)) add(`Skip to ${t12(hhmm(toMin(ride.late_from) + 5))} (late-leave window)`, () => { simNow = toMin(ride.late_from) + 5; lastMinute = -1; lastPoll = 0; });
+  if (ride && ['ACCEPTED', 'IN_PROGRESS'].includes(ride.state)) add('Complete trip', () => act('complete'));
+  add('Restart the demo', () => { leftSummary = null; restartClock(); go('home', true); });
+  return [el('h2', { className: 'h2', textContent: 'Demo menu' }), el('p', { className: 'small muted m0 fw4', textContent: t('Simulated clock {t}. Not part of the app.', { t: t12(hhmm(simNow)) }) }), ...items];
+}
+
+async function act(name, body = {}) {
   const mine = seq, before = joinedRide;
-  err.textContent = '';
-  $('ride').querySelectorAll('button').forEach((b) => { b.disabled = true; });
   try {
     const r = await api(rideUrl(name), { ...body, now: hhmm(simNow) });
     if (mine !== seq) return;
@@ -387,31 +509,25 @@ async function rideAction(name, body, err) {
         : t('{a} left. With {n} riders your share is {price}.', { a: r.left.name, n: r.ride.riders, price: money(r.ride.share) });
     else if (r.ride.state !== before.state) rideNote = '';
     took(r);
-  } catch (e) { err.textContent = e.message; $('ride').querySelectorAll('button').forEach((b) => { b.disabled = false; }); }
+  } catch (e) { toast(e.message); }
 }
 function took(r) { // apply a server reply: ride and any new chat messages
   joinedRide = r.ride;
   if (r.chat) addChat(r.chat);
   if (!LIVE.includes(joinedRide.state)) playing = false;
-  showJoined(false);
-}
-function confirmLeave(err) {
-  const ride = joinedRide;
-  const text = ride.leave_cost
-    ? t("It's less than {n} min before pickup and a driver is on the way, so you'll pay your share: {price}. It's added to your next booking, and the others don't pay more.", { n: cfg.late_leave_min, price: money(ride.leave_cost) })
-    : 'Leaving now is free.';
-  dialog(ride.leave_cost ? t("You'll pay your share: {price}", { price: money(ride.leave_cost) }) : 'Leave this ride?',
-    [el('p', { className: 'txt', textContent: text })], () => rideAction('leave', {}, err));
+  showJoined();
 }
 function afterLeave(r) {
   const ride = joinedRide;
-  joinedRide = null; offeredRide = null; playing = false; hideChat();
+  closeSheet();
+  joinedRide = null; offeredRide = null; playing = false; resetChat();
   if (r.charge) balance += r.charge;
   drawRide();
   showBook(currentTrip());
   $('ride').className = 'plain';
   $('ride').replaceChildren(noteLine(r.late ? t('You left this ride. {price} is added to your next ride.', { price: money(r.charge) })
-    : t('You left the {t} ride. No charge.', { t: ride.depart })));
+    : t('You left the {t} ride. No charge.', { t: t12(ride.depart) })));
+  if (r.late) { leftSummary = { late: true, charge: r.charge, ride }; renderRide(); } else if (view === 'ridescreen') back();
 }
 
 async function poll(ts) { // ready answers, driver, state changes and new chat
@@ -426,59 +542,80 @@ async function poll(ts) { // ready answers, driver, state changes and new chat
       if (r.ride.state !== ride.state) rideNote = '';
       joinedRide = r.ride;
       if (!LIVE.includes(joinedRide.state)) playing = false;
-      showJoined(false);
+      showJoined();
     }
   } catch { /* offline: the next poll retries */ } finally { polling = false; }
 }
-function updateJoined() { // runs every simulated minute: car only, no rebuild
+function updateJoined() { // every simulated minute
   updateShell();
-  const ride = joinedRide, go = toMin(ride.depart), end = toMin(ride.arrive);
-  const car = $('ride').querySelector('.car');
-  if (car) car.style.insetInlineStart = Math.max(0, Math.min(100, ((simNow - go) / (end - go)) * 100)) + '%';
+  if (view === 'ridescreen') $('rclock').textContent = t12(hhmm(simNow));
 }
 
-// --- Group chat ---
-function showChat(messages) {
-  const box = $('chat');
-  const list = el('ul', { className: 'msgs', id: 'msgs' });
-  const input = el('input', { id: 'say', maxLength: cfg.chat_max, placeholder: 'Message your group', autocomplete: 'off', dir: 'auto', ariaLabel: 'Message your group' });
-  const err = el('p', { className: 'error', role: 'alert' });
-  const form = el('form', { className: 'say' }, input, el('button', { className: 'small', textContent: 'Send' }));
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    const text = input.value.trim();
-    if (!text || !joinedRide) return;
-    err.textContent = '';
-    try {
-      const r = await api(rideUrl('chat'), { text, after: chatSeq });
-      input.value = '';
-      addChat(r.chat);
-    } catch (ex) { err.textContent = ex.message; }
-  };
-  box.replaceChildren(el('h3', { textContent: 'Group chat' }),
-    el('p', { className: 'sub', textContent: 'First names only. Phone numbers and links are hidden.' }), list, form, err);
-  box.hidden = false;
-  addChat(messages);
+// --- Group chat, ported from NextStop web/src/screens/Chat.tsx ---
+let chatLog = [], unread = 0;
+function resetChat() { chatLog = []; unread = 0; chatSeq = 0; $('msgs').replaceChildren(); }
+function openChat() {
+  if (!joinedRide) { show('home'); return; }
+  unread = 0;
+  $('chat-title').textContent = `To ${joinedRide.campus} · ${t12(arriveBy())}`;
+  $('chat-seats').replaceChildren(seatRow({ ...joinedRide, state: joinedRide.state === 'OPEN' ? 'OPEN' : 'X' }, 24));
+  renderMsgs();
+  chatLock();
 }
 function addChat(messages) {
-  const list = $('msgs');
-  if (!list) return;
+  let fresh = 0;
   for (const m of messages) {
     if (m.seq <= chatSeq) continue;
     chatSeq = m.seq;
-    const mine = m.who === me.profile.first_name;
-    list.append(m.who ? el('li', { className: mine ? 'me' : '' }, mine ? null : el('b', { textContent: m.who }), el('span', { textContent: m.text, dir: 'auto' }))
-      : el('li', { className: 'sys', textContent: m.text }));
+    chatLog.push(m);
+    if (m.who && m.who !== me.profile.first_name) fresh++;
   }
-  list.scrollTop = list.scrollHeight;
-  chatLock();
+  chatLog = chatLog.slice(-100);
+  if (view === 'chatscreen') renderMsgs(); else unread += fresh;
+  if (view === 'ridescreen' && fresh) renderRide();
+}
+const withMasks = (text) => text.split('•••').flatMap((part, i) => (i ? [el('span', { className: 'masked', textContent: '•••' }), part] : [part]));
+function renderMsgs() {
+  const items = [];
+  chatLog.forEach((m, i) => {
+    if (!m.who) { items.push(el('div', { className: 'msg-sys', textContent: m.text })); return; }
+    const mine = m.who === me.profile.first_name, prev = chatLog[i - 1], next = chatLog[i + 1];
+    const first = !prev || prev.who !== m.who, lastOfGroup = !next || next.who !== m.who;
+    if (first && !mine) items.push(el('div', { className: 'msg-name', textContent: m.who }));
+    items.push(el('div', { className: 'msg' + (mine ? ' mine' : '') },
+      mine ? null : first ? avatar(m.who, 32) : el('span', { className: 'spacer' }),
+      el('div', { className: 'bubble', dir: 'auto' }, ...withMasks(m.text))));
+    if (lastOfGroup && m.at) items.push(el('div', { className: 'msg-time' + (mine ? ' mine' : ''), textContent: t12(m.at) }));
+  });
+  $('msgs').replaceChildren(...items);
+  const sc = $('msgs').parentElement;
+  sc.scrollTop = sc.scrollHeight;
 }
 function chatLock() { // read-only once the trip is over
-  const done = joinedRide && ['COMPLETED', 'CANCELED'].includes(joinedRide.state);
-  const say = $('say');
-  if (say) { say.disabled = done; say.placeholder = done ? 'This chat is read-only now' : 'Message your group'; }
+  const done = !joinedRide || ['COMPLETED', 'CANCELED'].includes(joinedRide.state);
+  $('say-form').hidden = done; $('chat-closed').hidden = !done;
 }
-function hideChat() { $('chat').hidden = true; $('chat').replaceChildren(); chatSeq = 0; }
+function initChat() {
+  const input = $('say'), send = $('send'), count = $('say-count');
+  input.maxLength = cfg.chat_max;
+  input.oninput = () => {
+    send.disabled = !input.value.trim();
+    count.hidden = input.value.length <= 250;
+    count.textContent = `${input.value.length}/${cfg.chat_max}`;
+  };
+  $('say-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text || !joinedRide) return;
+    send.disabled = true;
+    try {
+      const r = await api(rideUrl('chat'), { text, after: chatSeq, now: hhmm(simNow) });
+      input.value = ''; input.oninput();
+      addChat(r.chat);
+    } catch (ex) { toast(ex.message); send.disabled = false; }
+  };
+  $('demo-open').onclick = () => openSheet('demo');
+}
 
 // --- Driver's app (demo) ---
 async function openDriver() {
@@ -565,7 +702,8 @@ function fillSelects() {
 
 async function start() {
   try { cfg = await api('api/config'); } catch (e) { $('splash').remove(); show('login'); $('login-error').textContent = e.message; return; }
-  initShell(); fillSelects();
+  initShell(); initChat(); fillSelects(); renderLoginQr();
+  matchMedia('(min-width: 980px)').addEventListener('change', renderLoginQr);
   for (const id of ['lecture', 'hood', 'campus']) $(id).addEventListener('change', refresh);
   $('logout').onclick = logout;
   $('restart').onclick = () => { restartClock(); };

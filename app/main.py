@@ -1,10 +1,11 @@
 import json
 import re
 import secrets
+import socket
 from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -61,9 +62,32 @@ def from_price(hood: str, lecture: str, campus: str = "JUST") -> float:
     return fare.share(trip["fare"], c.MAX_RIDERS_PER_CAR)
 
 
+def lan_ip() -> str | None:
+    """This computer's address on the local network. Connecting a UDP socket sends nothing."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("10.255.255.255", 1))
+            return sock.getsockname()[0]
+    except OSError:
+        return None
+
+
+def share_url(request: Request) -> str:
+    """The address a phone can open, for the in-app QR code."""
+    if c.PUBLIC_URL:
+        return c.PUBLIC_URL
+    host = request.url.hostname or ""
+    if host not in ("localhost", "127.0.0.1", "::1"):
+        return str(request.base_url)
+    ip = lan_ip()
+    port = request.url.port
+    return f"http://{ip}{f':{port}' if port and port != 80 else ''}/" if ip else str(request.base_url)
+
+
 @app.get("/api/config")
-def get_config():
+def get_config(request: Request):
     return {
+        "share_url": share_url(request),
         "now": c.DEMO_NOW,
         "clock": {"start": c.hhmm_to_min(c.DEMO_NOW), "hold_after": c.DEMO_HOLD_AFTER_MIN, "run": c.DEMO_RUN_MIN,
                   "speed": c.CLOCK_MIN_PER_SEC, "speed_joined": c.CLOCK_MIN_PER_SEC_JOINED},
@@ -87,6 +111,16 @@ def price(hood: str, lecture: str = Query(pattern=TIME), campus: Literal["JUST",
     if campus not in c.SYNC_CAMPUSES:
         raise HTTPException(422, "Shared rides go to JUST only in this pilot")
     return {"from": from_price(hood, lecture, campus)}
+
+
+@app.get("/api/solo")
+def solo(hood: str, campus: Literal["JUST", "YU"] = "JUST", now: Now = None):
+    """A normal Jeeny ride (Economy), leaving now: one rider, door to campus, same tariff."""
+    _, lat, lon = check_hood(hood)
+    t = c.sim_now(now)
+    trip = fare.drive(fare.leg_km(lat, lon, campus), t)
+    return {"fare": fare.up05(trip["fare"]), "minutes": round(trip["minutes"]), "km": trip["km"],
+            "arrive": c.min_to_hhmm(trip["drop"]), "driver": c.DRIVERS[0], "pickup_in": 4}
 
 
 class Login(BaseModel):
@@ -231,14 +265,15 @@ def load(ride_id: str, s: dict, joined=True) -> dict:
     return json.loads(row["data"])
 
 
-def store(data: dict, s: dict, msgs: list = ()):
+def store(data: dict, s: dict, msgs: list = (), now: int | None = None):
     db.execute("UPDATE rides SET data = ? WHERE id = ? AND session = ?", (json.dumps(data), data["id"], s["id"]))
+    at = c.min_to_hhmm(now) if now is not None else None  # the visitor's simulated time
     for m in msgs:
-        db.execute("INSERT INTO chat (session, ride, who, text) VALUES (?, ?, ?, ?)", (s["id"], data["id"], m["who"], m["text"]))
+        db.execute("INSERT INTO chat (session, ride, who, text, at) VALUES (?, ?, ?, ?, ?)", (s["id"], data["id"], m["who"], m["text"], at))
 
 
 def chat_of(ride_id: str, s: dict, after: int = 0) -> list:
-    rows = db.all_rows("SELECT seq, who, text FROM chat WHERE session = ? AND ride = ? AND seq > ? ORDER BY seq DESC LIMIT ?",
+    rows = db.all_rows("SELECT seq, who, text, at FROM chat WHERE session = ? AND ride = ? AND seq > ? ORDER BY seq DESC LIMIT ?",
                        (s["id"], ride_id, after, c.CHAT_HISTORY))
     return rows[::-1]
 
@@ -247,7 +282,7 @@ def current(ride_id: str, s: dict, now: int) -> tuple[dict, list]:
     """Load a joined ride and move it on to `now`."""
     data, msgs = load(ride_id, s), []
     if data["day"] == "today" and rides.advance(data, now, msgs):
-        store(data, s, msgs)
+        store(data, s, msgs, now)
     return data, msgs
 
 
@@ -288,7 +323,7 @@ def join(ride_id: str, body: Clock, s: dict = Depends(session)):
     names = [p["first_name"] for p in data["crew"]]
     msgs = [{"who": None, "text": "You joined. " + ", ".join(names) + (" is" if len(names) == 1 else " are") + " in this ride"}]
     msgs += [{"who": p["first_name"], "text": rides.HELLO[i]} for i, p in enumerate(data["crew"][:2])]
-    store(data, s, msgs)
+    store(data, s, msgs, now)
     return reply(data, s, now)
 
 
@@ -308,7 +343,7 @@ def find_driver(ride_id: str, body: Clock, s: dict = Depends(session)):
     if data["day"] != "today" or data["state"] != "OPEN":
         raise HTTPException(409, "The ready check has already started")
     rides.start_ready_check(data, t, msgs := [], "You")
-    store(data, s, msgs)
+    store(data, s, msgs, t)
     return reply(data, s, t)
 
 
@@ -327,7 +362,7 @@ def ready(ride_id: str, body: Ready, s: dict = Depends(session)):
     except ValueError as e:
         raise HTTPException(409, str(e))
     rides.advance(data, t, msgs)
-    store(data, s, msgs)
+    store(data, s, msgs, t)
     return reply(data, s, t)
 
 
@@ -352,7 +387,7 @@ def driver(ride_id: str, body: DriverAnswer, s: dict = Depends(session)):
         rides.driver_answer(data, body.accept, msgs := [])
     except ValueError as e:
         raise HTTPException(409, str(e))
-    store(data, s, msgs)
+    store(data, s, msgs, t)
     return {**reply(data, s, t), "offer": rides.driver_offer(data)}
 
 
@@ -391,7 +426,7 @@ def dropout(ride_id: str, body: Clock, s: dict = Depends(session)):
     except ValueError as e:
         raise HTTPException(409, str(e))
     db.execute("INSERT OR IGNORE INTO dropped VALUES (?, ?)", (s["id"], gone["id"]))
-    store(data, s, msgs)
+    store(data, s, msgs, t)
     return {**reply(data, s, t), "left": entry, "replacement": new and new["first_name"]}
 
 
@@ -403,13 +438,14 @@ def complete(ride_id: str, body: Clock, s: dict = Depends(session)):
     if data["state"] not in ("ACCEPTED", "IN_PROGRESS"):
         raise HTTPException(409, "The trip needs a driver first")
     rides.complete(data, msgs := [])
-    store(data, s, msgs)
+    store(data, s, msgs, t)
     return reply(data, s, t)
 
 
 class Say(BaseModel):
     text: str = Field(min_length=1, max_length=c.CHAT_MAX_CHARS)
     after: int = 0
+    now: str | None = Field(default=None, pattern=TIME)
 
 
 @app.post("/api/rides/{ride_id}/chat")
@@ -421,7 +457,7 @@ def chat(ride_id: str, body: Say, s: dict = Depends(session)):
     text = rides.mask(body.text.strip())
     if not text:
         raise HTTPException(422, "Type a message")
-    store(data, s, [{"who": s["first_name"], "text": text}])
+    store(data, s, [{"who": s["first_name"], "text": text}], c.sim_now(body.now))
     return {"chat": chat_of(ride_id, s, body.after)}
 
 

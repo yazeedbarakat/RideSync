@@ -3,7 +3,7 @@
 // Nothing here is stored or sent: account choices live in memory and no real payment exists.
 let view = '', pmap = null, pickHood = null, dest = null, cat = 'My Locations', account = {};
 const ROOTS = ['login', 'launch'];
-const SCREENS = ['login', 'launch', 'where', 'pickup', 'home'];
+const SCREENS = ['login', 'launch', 'where', 'pickup', 'home', 'chatscreen', 'ridescreen', 'rideopts'];
 // Places outside the pilot are listed like in the app, but only campuses can be booked here.
 const PLACES = {
   University: [{ name: 'JUST', sub: 'Jordan University of Science and Technology', campus: 'JUST' }, { name: 'Yarmouk University', sub: 'Irbid', campus: 'YU' }],
@@ -11,7 +11,7 @@ const PLACES = {
   Shopping: [{ name: 'Arabella Mall', sub: 'Irbid' }, { name: 'Irbid City Center', sub: 'Irbid' }],
 };
 const MENU = [['home', 'link', 'Sync', 'New'], ['max', 'link', 'Jeeny Max', 'Subscribe'], ['rides', 'clock', 'My Rides'], ['notes', 'bell', 'Notification'], ['promos', 'promo', 'Promotions'],
-  ['wallet', 'wallet', 'Wallet'], ['cards', 'card', 'My Cards'], ['invite', 'gift', 'Invite & Earn'], ['about', 'info', 'About'], ['help', 'help', 'Help Center', '(New)']];
+  ['wallet', 'wallet', 'Wallet'], ['cards', 'card', 'My Cards'], ['invite', 'gift', 'Invite & Earn'], ['phone', 'qr', 'Open on your phone'], ['about', 'info', 'About'], ['help', 'help', 'Help Center', '(New)']];
 const NOT_IN_DEMO = 'Not part of this demo. Try Sync.';
 
 // --- Moving between screens ---
@@ -24,6 +24,9 @@ function show(name) {
   if (name === 'launch') renderLaunch();
   if (name === 'where') renderWhere();
   if (name === 'pickup') openPickup();
+  if (name === 'chatscreen') openChat();
+  if (name === 'ridescreen') openRide();
+  if (name === 'rideopts') openOpts();
   if (name === 'home' && map) { map.invalidateSize(); if (ready) drawMap(currentTrip()); }
 }
 function go(name, replace = ROOTS.includes(name)) {
@@ -58,14 +61,16 @@ function closeDialog() {
   $('dialog').hidden = true; $('shade').hidden = true;
   if (dialogFrom && dialogFrom.isConnected) dialogFrom.focus();
 }
-function dialog(title, kids, onConfirm) {
+function dialog(title, kids, onConfirm, opts = {}) { // opts.keep: safe primary button, opts.ok: danger action
   dialogFrom = document.activeElement;
   const x = el('button', { className: 'x', ariaLabel: t('Close') }, icon('x'));
   x.onclick = closeDialog;
-  const ok = el('button', { className: 'primary', textContent: t('Confirm') });
+  const ok = el('button', { className: opts.keep ? 'danger' : 'primary', textContent: t(opts.ok || 'Confirm') });
   ok.onclick = () => { onConfirm(); closeDialog(); };
+  const keep = opts.keep ? el('button', { className: 'primary', textContent: t(opts.keep) }) : null;
+  if (keep) keep.onclick = closeDialog;
   $('dialog').ariaLabel = t(title);
-  $('dialog').replaceChildren(el('i', { className: 'grab' }), x, el('h2', { textContent: t(title) }), el('div', { className: 'opts' }, ...kids), ok);
+  $('dialog').replaceChildren(...[el('i', { className: 'grab' }), x, el('h2', { textContent: t(title) }), el('div', { className: 'opts' }, ...kids), keep, ok].filter(Boolean));
   $('shade').hidden = false; $('dialog').hidden = false;
   x.focus();
 }
@@ -88,8 +93,17 @@ function row(ic, title, sub, onclick, end) {
 const campusName = (id) => t(cfg.campuses[id].name);
 const hoodName = (id) => t(cfg.hoods.find((h) => h.id === id).name);
 function renderAlert() { // today's booked ride
-  $('alert').hidden = !joinedRide || !LIVE.includes(joinedRide.state);
+  const sync = joinedRide && LIVE.includes(joinedRide.state);
+  $('alert').hidden = !sync && !booked;
   if ($('alert').hidden) return;
+  if (!sync) { // a normal ride
+    const kids = [icon('car'), el('span', {}, el('b', { textContent: `${booked.driver.name} is on the way` }), el('small', { textContent: `Economy to ${normalTrip.campus} · ${money(booked.fare)}` })), icon('next')];
+    kids[2].classList.add('flip');
+    $('alert').replaceChildren(...kids);
+    $('alert').onclick = () => go('rideopts');
+    return;
+  }
+  $('alert').onclick = () => go('ridescreen');
   const body = [icon('check'), el('span', {}, el('b', { textContent: t('Your Sync ride leaves at {t}', { t: joinedRide.depart }) }),
     el('small', { textContent: t('Arrives {t}', { t: joinedRide.arrive }) + ' · ' + money(joinedRide.share) })), icon('next')];
   body[2].classList.add('flip');
@@ -153,11 +167,62 @@ function setPick(id, move = true) {
   $('pname').textContent = t('Near {place}', { place: h.name }) + ', Irbid';
   $('pto').textContent = t('To {place}', { place: campusName(dest) });
 }
-function confirmPickup() {
-  const changed = $('hood').value !== pickHood || $('campus').value !== dest;
-  $('hood').value = pickHood; $('campus').value = dest;
-  go('home', true);
-  if (changed) refresh(); // the same trip keeps any joined ride
+function confirmPickup() { // a normal ride: Sync has its own tile and its own trip form
+  if (!booked) normalTrip = { hood: pickHood, campus: dest };
+  go('rideopts');
+}
+
+// --- Normal ride: Jeeny's existing Economy service, simulated. Separate from Sync. ---
+let omap = null, opins = null, normalTrip = null, normalQuote = null, booked = null;
+async function openOpts() {
+  if (!normalTrip) { show('launch'); return; }
+  if (!omap) { omap = L.map('omap', { zoomControl: false }); baseMap(omap); opins = L.layerGroup().addTo(omap); }
+  omap.invalidateSize();
+  const h = cfg.hoods.find((x) => x.id === normalTrip.hood), c = cfg.campuses[normalTrip.campus];
+  opins.clearLayers();
+  L.circleMarker([h.lat, h.lon], { radius: 9, color: '#fff', weight: 2, fillColor: '#EE018D', fillOpacity: 1 }).addTo(opins);
+  L.circleMarker([c.lat, c.lon], { radius: 9, color: '#fff', weight: 2, fillColor: '#6B2D8F', fillOpacity: 1 }).addTo(opins);
+  omap.fitBounds([[h.lat, h.lon], [c.lat, c.lon]], { padding: [40, 40] });
+  if (!booked) {
+    normalQuote = null; renderOpts();
+    try { normalQuote = await api(`api/solo?hood=${normalTrip.hood}&campus=${normalTrip.campus}&now=${hhmm(simNow)}`); } catch (e) { toast(e.message); }
+  }
+  renderOpts();
+}
+function renderOpts() {
+  const trip = normalTrip, q = booked || normalQuote, h = cfg.hoods.find((x) => x.id === trip.hood);
+  const route = el('div', { className: 'card info' },
+    el('div', { className: 'info-row from' }, icon('pin'), el('div', { className: 'truncate' }, el('div', { className: 'lbl', textContent: 'Pickup' }), el('div', { className: 'val truncate', textContent: `Near ${h.name}, Irbid` }))),
+    el('div', { className: 'info-row to' }, icon('pin'), el('div', { className: 'truncate' }, el('div', { className: 'lbl', textContent: 'Destination' }), el('div', { className: 'val truncate', textContent: cfg.campuses[trip.campus].name }))));
+  $('o-progress').replaceChildren();
+  if (!booked) {
+    $('o-title').textContent = 'Choose a ride';
+    $('o-sub').textContent = 'Leaving now';
+    const option = el('div', { className: 'card' },
+      el('div', { className: 'row' }, el('span', { className: 'car-tile' }, icon('car')),
+        el('span', { className: 'grow' }, el('b', { className: 'big', textContent: 'Economy' }),
+          el('div', { className: 'body muted', textContent: q ? `~${q.minutes} min · arrive ${t12(q.arrive)}` : 'Getting a price…' })),
+        el('b', { className: 'big', textContent: q ? money(q.fare) : '' })),
+      el('div', { className: 'row mt8' }, el('span', { className: 'car-tile cash' }, icon('cash')), el('span', { className: 'big', textContent: 'Cash' })));
+    $('o-cards').replaceChildren(route, option, el('p', { className: 'small muted center', textContent: 'Simulated booking. Normal rides are Jeeny’s existing service; Sync is the new part.' }));
+    const book = button(q ? `Book Economy · ${money(q.fare)}` : 'Book Economy', () => { booked = { ...q, at: simNow }; renderOpts(); renderLaunch(); });
+    book.disabled = !q;
+    $('o-actions').replaceChildren(book);
+    return;
+  }
+  $('o-title').textContent = 'Driver on the way';
+  $('o-sub').textContent = `${q.driver.name} · ${q.driver.car} · ${q.driver.plate.replace('-', '\u2011')}`;
+  $('o-progress').replaceChildren(...[0, 1, 2, 3].map((i) => el('span', { className: i <= 2 ? 'on' : '' })));
+  const cancel = el('button', { className: 'card row leave' }, icon('nocar'), el('span', { textContent: 'Cancel ride' }));
+  cancel.onclick = () => { booked = null; toast('Ride cancelled. No fee.'); renderLaunch(); back(); };
+  $('o-cards').replaceChildren(
+    el('div', { className: 'card info' }, el('div', { className: 'info-row lead' }, icon('clock'), el('span', { className: 'val', textContent: `Arriving in about ${q.pickup_in} min` }))),
+    route,
+    el('div', { className: 'card' }, el('div', { className: 'body muted', textContent: 'Booking Details' }),
+      el('div', { className: 'row mt8' }, el('span', { className: 'car-tile' }, icon('car')), el('span', { className: 'grow big', textContent: 'Economy' }), el('span', { className: 'body muted', textContent: money(q.fare) })),
+      el('div', { className: 'row mt8' }, el('span', { className: 'car-tile cash' }, icon('cash')), el('span', { className: 'big', textContent: 'Cash' }))),
+    cancel);
+  $('o-actions').replaceChildren(button('Back to home', () => go('launch', true), 'btn btn-secondary'));
 }
 
 // --- Menu ---
@@ -204,7 +269,25 @@ const choice = (ic, label, options) => field(ic, label, account[label] && t(acco
 const faq = (q, a) => el('details', {}, el('summary', { textContent: t(q) }), p(a));
 const tick = (text) => el('p', { className: 'tick' }, el('span', {}, icon('check')), t(text));
 
+// --- "Open on your phone": a QR code of the address phones can reach (made in static/qr.js) ---
+function qrBlock(cls = 'qrimg') {
+  const box = el('div', { className: cls });
+  try { box.innerHTML = QR.svg(cfg.share_url); } catch { box.textContent = cfg.share_url; } // the SVG is built by qr.js, not from page text
+  return box;
+}
+function renderLoginQr() { // beside the phone frame on a laptop screen: on a phone you are already there
+  const wide = matchMedia('(min-width: 980px)').matches;
+  $('desk-qr').hidden = !wide || !cfg.share_url;
+  if ($('desk-qr').hidden) return;
+  $('desk-qr-img').replaceWith(Object.assign(qrBlock(), { id: 'desk-qr-img' }));
+  $('desk-qr-url').textContent = cfg.share_url.replace(/\/$/, '');
+  $('desk-qr-hint').textContent = /^https:/.test(cfg.share_url) ? 'Scan with your camera.' : 'Scan with your camera. Same Wi-Fi as this computer.';
+}
 const PAGES = {
+  phone: () => ({ title: 'Open on your phone', body: [qrBlock('qrimg big'),
+    el('p', { className: 'qrurl', textContent: cfg.share_url.replace(/\/$/, '') }),
+    tick('Open the camera and point it at the code'), tick('Tap the link that appears'),
+    p(/^https:/.test(cfg.share_url) ? 'Anyone with the link can open it.' : 'The phone must be on the same Wi-Fi as this computer.', 'lbl')] }),
   driver: () => {
     const o = driverOffer, err = el('p', { className: 'error', role: 'alert' });
     if (!o) return { title: "Driver's app", body: [p('No ride to show', 'txt mid')] };

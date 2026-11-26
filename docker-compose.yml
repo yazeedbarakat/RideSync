@@ -5,4 +5,5 @@ services:
     environment:
       DEMO_NOW: "${DEMO_NOW:-06:10}"
       GOOGLE_MAPS_KEY: "${GOOGLE_MAPS_KEY:-}"
+      PUBLIC_URL: "${PUBLIC_URL:-}"
       PORT: "8000"
