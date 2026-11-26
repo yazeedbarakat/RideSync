@@ -1,14 +1,14 @@
-"""Arrival range, bus reports, drop-outs, family link and tomorrow's plan."""
+"""Bus model features (backend only) and the shared-ride lifecycle ported from NextStop."""
 import pytest
 from fastapi.testclient import TestClient
 
 from app import config as c
-from app import matching
+from app import rides
 from app.main import app
 
 from .test_demo import login, match
 
-AHMAD, LINA = "ahmad@cit.just.edu.jo", "lina@cit.just.edu.jo"
+AHMAD, LINA = "ahmad", "lina"
 
 
 @pytest.fixture(scope="module")
@@ -17,18 +17,38 @@ def api():
         yield client
 
 
+@pytest.fixture
+def instant(monkeypatch):
+    """Simulated riders answer the ready check at once."""
+    monkeypatch.setattr(c, "SIM_READY_AFTER_S", (0, 0, 0))
+
+
 def late(api, lecture="08:00", headers=None, **kw):
     return api.get("/api/late-check", params={"hood": "andalus", "lecture": lecture, **kw}, headers=headers or {}).json()
 
 
-def joined(api, h, **kw):
+def joined(api, h, now="06:12", **kw):
     ride = match(api, h, **kw).json()["ride"]
-    assert api.post(f"/api/rides/{ride['id']}/join", headers=h, json={}).status_code == 200
-    return ride
+    r = api.post(f"/api/rides/{ride['id']}/join", headers=h, json={"now": now})
+    assert r.status_code == 200
+    return r.json()["ride"]
 
 
 def post(api, h, ride, action, **body):
     return api.post(f"/api/rides/{ride['id']}/{action}", headers=h, json=body)
+
+
+def get(api, h, ride, **params):
+    return api.get(f"/api/rides/{ride['id']}", headers=h, params=params).json()
+
+
+def accepted(api, who=AHMAD):
+    h = login(api, who)
+    ride = joined(api, h)
+    post(api, h, ride, "find-driver", now="06:12")
+    assert post(api, h, ride, "ready", ready=True, now="06:12").json()["ride"]["state"] == "DISPATCHED"
+    assert post(api, h, ride, "driver", accept=True, now="06:12").json()["ride"]["state"] == "ACCEPTED"
+    return h, ride
 
 
 # --- Arrival range ---
@@ -74,92 +94,138 @@ def test_impossible_reports_are_rejected(api):
     assert report(api, h, now="08:20").status_code == 409  # arrived
 
 
-# --- Leaving and drop-outs ---
-def test_dropouts_refill_then_reprice_then_cancel(api):
+# --- Ride lifecycle (NextStop SPEC v5 §3) ---
+def test_ready_check_driver_trip_and_summary(api, instant):
     h = login(api, AHMAD)
     ride = joined(api, h)
-    seen, prices, gone = set(), [], 0
-    while (r := post(api, h, ride, "dropout").json())["ride"]:
-        new = r["ride"]
-        assert (new["id"], new["depart"], new["arrive"], new["pickup"]) == (ride["id"], ride["depart"], ride["arrive"], ride["pickup"])
-        assert new["seat_price"] == c.seat_price(new["riders"]) and new["riders"] >= c.MIN_RIDERS_PER_CAR
-        assert bool(r["replacement"]) == (new["riders"] == c.MAX_RIDERS_PER_CAR)
-        prices.append(new["seat_price"])
-        gone += 1
-        assert gone < 10
-    assert prices[0] == 1.25 and prices[-1] == 1.67
-    assert post(api, h, ride, "dropout").status_code == 404  # cancelled
-    again = match(api, h).json()["ride"]
-    assert again is None or again["id"] != ride["id"]
+    assert ride["state"] == "OPEN" and ride["share"] == 1.75
+    assert api.get(f"/api/rides/{ride['id']}/offer", headers=h).status_code == 409  # drivers see it only once dispatched
+    r = post(api, h, ride, "find-driver", now="06:12").json()
+    assert r["ride"]["state"] == "READY_CHECK" and any("started the ready check" in m["text"] for m in r["chat"])
+    assert post(api, h, ride, "find-driver", now="06:12").status_code == 409
+    r = post(api, h, ride, "ready", ready=True, now="06:12").json()
+    assert r["ride"]["state"] == "DISPATCHED" and all(o["ready"] for o in r["ride"]["others"])
+    offer = api.get(f"/api/rides/{ride['id']}/offer", headers=h).json()
+    assert (offer["fare"], offer["riders"], offer["collect"], offer["first_pickup"], offer["respond_by"]) == (6.87, 4, 7.00, "07:15", "07:00")
+    assert offer["collect"] >= offer["fare"] and offer["driver"]["name"] == c.DRIVERS[0]["name"]
+    r = post(api, h, ride, "driver", accept=False, now="06:12").json()  # the offer goes to the next driver
+    assert r["ride"]["state"] == "DISPATCHED" and r["offer"]["driver"]["name"] == c.DRIVERS[1]["name"]
+    r = post(api, h, ride, "driver", accept=True, now="06:12").json()
+    assert r["ride"]["state"] == "ACCEPTED" and r["ride"]["driver"]["name"] == c.DRIVERS[1]["name"]
+    assert get(api, h, ride, now="07:15")["ride"]["state"] == "IN_PROGRESS"
+    done = get(api, h, ride, now="07:48")["ride"]
+    assert done["state"] == "COMPLETED"
+    assert done["summary"] == {"arrived": "07:48", "paid": 1.75, "riders": 4, "saved": 5.15, "driver": c.DRIVERS[1]["name"],
+                               "cash": 7.0, "credit": 0.0, "driver_total": 7.0}
+    assert post(api, h, ride, "chat", text="thanks").status_code == 409  # read-only after the trip
 
 
-def test_women_only_car_is_refilled_with_women_only(api):
+def test_ready_check_starts_by_itself_and_no_answer_counts_as_ready(api, monkeypatch):
+    monkeypatch.setattr(c, "SIM_READY_AFTER_S", (999, 999, 999))
     h = login(api, LINA)
-    ride = joined(api, h, women_only=True)
-    while (r := post(api, h, ride, "dropout").json())["ride"]:
-        assert r["ride"]["women_only"]
+    ride = joined(api, h)
+    assert get(api, h, ride, now="06:30")["ride"]["state"] == "OPEN"
+    assert get(api, h, ride, now="06:31")["ride"]["state"] == "READY_CHECK"  # pickup 07:16 - 45 min
+    assert get(api, h, ride, now="06:35")["ride"]["state"] == "READY_CHECK"
+    assert get(api, h, ride, now="06:36")["ride"]["state"] == "DISPATCHED"  # 5 min passed
 
 
-def test_replacement_keeps_every_rule():
-    base = {"campus": "JUST", "lat": 32.55, "lon": 35.87, "women_only": 0, "gender": "M", "desired_arrival": 470}
-    rest = [{**base, "id": 1}, {**base, "id": 2, "gender": "F"}]
-    bad = [{**base, "id": 1}, {**base, "id": 3, "lat": 32.57}, {**base, "id": 4, "campus": "YU"}, {**base, "id": 5, "desired_arrival": 469},
-           {**base, "id": 6, "desired_arrival": 481}, {**base, "id": 7, "gender": "F", "women_only": 1}]
-    pick = lambda pool, now=430: matching.replacement(rest, pool, {"lat": 32.55, "lon": 35.87}, 470, 440, now)
-    assert pick(bad) is None
-    assert pick([*bad, {**base, "id": 8, "lat": 32.551}])["id"] == 8
-    assert pick([{**base, "id": 8, "lat": 32.551}], now=439.9) is None  # can't walk there in time
-
-
-def test_leave(api):
-    h = login(api, AHMAD)
-    ride = match(api, h).json()["ride"]
-    assert post(api, h, ride, "leave").status_code == 404  # not joined yet
-    joined(api, h)
-    assert post(api, h, ride, "leave", now="07:20").status_code == 409
-    assert post(api, h, ride, "leave").status_code == 200
-    joined(api, h)  # can come back
-
-
-def test_earlier_car_is_offered_only_when_nothing_fits(api):
-    pool = [{"id": i, "gender": "M", "women_only": 0, "lat": 32.55, "lon": 35.87, "campus": "JUST", "desired_arrival": 450} for i in range(1, 4)]
-    me = {**pool[0], "id": 0}
-    assert matching.find({**me, "desired_arrival": 455}, pool, 400)[1] == 0
-    m, earlier = matching.find({**me, "desired_arrival": 470}, pool, 400)
-    assert earlier == 10 and m["arrive"] == 450
-    assert matching.find({**me, "desired_arrival": 500}, pool, 400)[0] is None
-
-
-# --- Family link ---
-def test_family_link_shows_one_rider_and_stops(api):
-    h, other = login(api, AHMAD), login(api, LINA)
-    ride = match(api, h).json()["ride"]
-    assert post(api, h, ride, "share", now=430).status_code == 404  # not joined
-    joined(api, h)
-    assert post(api, other, ride, "share", now=430).status_code == 404
-    token = post(api, h, ride, "share", now=430).json()["token"]
-    assert post(api, h, ride, "share", now=435.5).json()["token"] == token
-    r = api.get(f"/api/trips/{token}")
-    assert (r.json()["name"], r.json()["now"]) == ("Ahmad", 435.5)
-    assert not any(o["name"] in r.text for o in ride["others"]) and "seat_price" not in r.json()
-    assert api.get("/api/trips/wrong").status_code == 404
-    post(api, h, ride, "unshare")
-    assert api.get(f"/api/trips/{token}").status_code == 404
-    token = post(api, h, ride, "share", now=430).json()["token"]
-    post(api, h, ride, "leave")
-    assert api.get(f"/api/trips/{token}").status_code == 404
-
-
-def test_family_link_keeps_moving_if_the_riders_phone_sleeps(api, monkeypatch):
+def test_no_driver_cancels_without_fees(api, instant):
     h = login(api, AHMAD)
     ride = joined(api, h)
-    token = post(api, h, ride, "share", now=440, speed=2).json()["token"]
-    import app.main as m
-    real = m.time.time
-    monkeypatch.setattr(m.time, "time", lambda: real() + 10)
-    assert 460 <= api.get(f"/api/trips/{token}").json()["now"] < 461
-    monkeypatch.setattr(m.time, "time", lambda: real() + 9999)
-    assert api.get(f"/api/trips/{token}").json()["now"] == c.hhmm_to_min(c.DEMO_NOW) + c.DEMO_RUN_MIN
+    post(api, h, ride, "find-driver", now="06:12")
+    post(api, h, ride, "ready", ready=True, now="06:12")
+    r = get(api, h, ride, now="07:00")["ride"]  # respond-by = pickup - 15 min
+    assert r["state"] == "CANCELED" and "Nobody is charged" in r["cancel_reason"]
+    h2 = login(api, AHMAD)
+    ride2 = joined(api, h2)
+    post(api, h2, ride2, "find-driver", now="06:12")
+    post(api, h2, ride2, "ready", ready=True, now="06:12")
+    for _ in c.DRIVERS:
+        r = post(api, h2, ride2, "driver", accept=False, now="06:12").json()
+    assert r["ride"]["state"] == "CANCELED"
+    assert post(api, h2, ride2, "leave", now="06:12").status_code == 409
+
+
+# --- Leaving (SPEC §3.10) ---
+def test_co_rider_leaves_free_before_the_ready_check_and_the_seat_refills_or_reprices(api):
+    h = login(api, AHMAD)
+    ride = joined(api, h)
+    r = post(api, h, ride, "dropout", now="06:12").json()
+    assert r["left"]["late"] is False and r["ride"]["riders"] in (3, 4)
+    if r["replacement"]:
+        assert r["ride"]["riders"] == 4 and r["ride"]["share"] <= 1.75
+    while r["ride"]["others"]:
+        r = post(api, h, ride, "dropout", now="06:12").json()
+    assert r["ride"]["riders"] == 1 and r["ride"]["share"] == r["ride"]["alone"]  # it still goes, at the solo price
+    assert post(api, h, ride, "dropout", now="06:12").status_code == 409
+
+
+def test_co_rider_late_leave_pays_their_share_and_yours_never_goes_up(api, instant):
+    h, ride = accepted(api)
+    before = get(api, h, ride, now="06:12")["ride"]
+    r = post(api, h, ride, "dropout", now="06:50").json()  # 25 min before the 07:15 pickup
+    assert r["left"] == {"name": before["others"][-1]["name"], "late": True, "charge": 1.75}
+    assert r["replacement"] is None and r["ride"]["riders"] == 3  # no replacements after the ready check
+    assert r["ride"]["share"] <= before["share"] and r["ride"]["credit"] == 1.75
+    offer = api.get(f"/api/rides/{ride['id']}/offer", headers=h).json()
+    assert offer["collect"] + offer["credit"] >= offer["fare"]  # the driver still gets the full fare
+    s = post(api, h, ride, "complete", now="06:51").json()["ride"]["summary"]
+    assert (s["cash"], s["credit"], s["driver_total"]) == (5.25, 1.75, 7.0)
+
+
+def test_co_rider_free_leave_after_accept_raises_the_share(api, instant):
+    h, ride = accepted(api)
+    r = post(api, h, ride, "dropout", now="06:44").json()  # 31 min before pickup: still free
+    assert r["left"]["late"] is False and r["ride"]["credit"] == 0 and r["ride"]["share"] == 2.30  # 6.87 / 3
+
+
+def test_your_late_leave_is_charged_on_your_next_booking(api, instant):
+    h, ride = accepted(api)
+    assert get(api, h, ride, now="06:45")["ride"]["leave_cost"] == 0
+    assert get(api, h, ride, now="06:46")["ride"]["leave_cost"] == 1.75
+    r = post(api, h, ride, "leave", now="06:46").json()
+    assert (r["late"], r["charge"]) == (True, 1.75)
+    assert api.get("/api/me", headers=h).json()["balance"] == 1.75
+    assert get(api, h, ride).get("detail") == "Ride not found"
+    again = match(api, h, lecture="09:00", now="06:46").json()
+    assert again["balance"] == 1.75
+    j = post(api, h, again["ride"], "join", now="06:46").json()["ride"]
+    assert j["balance_added"] == 1.75 and api.get("/api/me", headers=h).json()["balance"] == 0
+
+
+def test_leaving_before_a_driver_accepts_is_free(api, instant):
+    for step in ("OPEN", "READY_CHECK"):
+        h = login(api, LINA)
+        ride = joined(api, h)
+        if step == "READY_CHECK":
+            post(api, h, ride, "find-driver", now="06:12")
+            r = post(api, h, ride, "ready", ready=False, now="06:12").json()  # "Cancel ride for me"
+        else:
+            r = post(api, h, ride, "leave", now="06:12").json()
+        assert (r["late"], r["charge"]) == (False, 0)
+        assert api.get("/api/me", headers=h).json()["balance"] == 0
+
+
+# --- Group chat ---
+@pytest.mark.parametrize("text,shown", [
+    ("call me 0791234567", "call me •••"), ("079 123 4567 or +962-79-123-4567", "••• or •••"),
+    ("see https://x.co/abc and www.foo.org", "see ••• and •••"), ("meet at gate 3 at 7:10", "meet at gate 3 at 7:10"),
+    ("my insta is lina.jo", "my insta is •••"), ("room 12345", "room 12345")])
+def test_chat_masks_numbers_and_links(text, shown):
+    assert rides.mask(text) == shown
+
+
+def test_chat(api):
+    h = login(api, LINA)
+    ride = joined(api, h)
+    first = get(api, h, ride)["chat"]
+    assert first[0]["who"] is None and "joined" in first[0]["text"] and first[1]["who"] == "Rania"
+    r = post(api, h, ride, "chat", text="Hi! I'm near the bakery, 0791234567", after=first[-1]["seq"]).json()
+    assert [m["text"] for m in r["chat"]] == ["Hi! I'm near the bakery, •••"] and r["chat"][0]["who"] == "Lina"
+    assert post(api, h, ride, "chat", text="x" * (c.CHAT_MAX_CHARS + 1)).status_code == 422
+    assert post(api, h, ride, "chat", text="   ").status_code == 422
+    assert post(api, login(api, AHMAD), ride, "chat", text="hi").status_code == 404
 
 
 # --- Tomorrow ---
@@ -173,7 +239,6 @@ def test_tomorrow_is_planned_and_reserved_apart_from_today(api):
     assert post(api, h, p["ride"], "join", now="08:10").status_code == 200
     assert post(api, h, today, "leave").status_code == 200
     assert post(api, h, p["ride"], "leave", now="08:10").status_code == 200
-    assert post(api, h, p["ride"], "share", now=430).status_code == 404
     for hood in c.HOODS:
         for campus in c.CAMPUSES:
             assert api.post("/api/plan", headers=h, json={"hood": hood, "lecture": "08:00", "campus": campus}).status_code == 200
@@ -185,3 +250,10 @@ def test_static_files_are_revalidated(api):
         assert r.headers["cache-control"] == "no-cache"
         again = api.get(path, headers={"If-None-Match": r.headers["etag"]})
         assert again.status_code == 304
+
+
+def test_map_key_comes_only_from_the_environment(api, monkeypatch):
+    monkeypatch.setattr(c, "GOOGLE_MAPS_KEY", "")
+    assert api.get("/api/map").json() == {"google_key": ""}
+    monkeypatch.setattr(c, "GOOGLE_MAPS_KEY", "demo")
+    assert api.get("/api/map").json() == {"google_key": "demo"}

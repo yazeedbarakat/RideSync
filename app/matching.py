@@ -1,13 +1,14 @@
-"""AI feature 2: smart ride matching.
+"""Ride matching: rules-based, on the server.
 
-Small exhaustive search: take the nearest compatible students, try every car of 4
-(then 3), keep the valid one with the least walking and time spread.
+Small exhaustive search: take the nearest compatible riders, try every car of 4 (then 3),
+keep the valid one with the least walking and time spread. Everyone in a car has the
+same gender, the same destination and an arrive-by within ARRIVAL_WINDOW_MIN.
 """
 import hashlib
 from itertools import combinations
-from math import ceil
 
 from . import config as c
+from . import fare
 from .geo import haversine_m
 
 POOL = 12  # nearest candidates to consider: C(12,3) = 220 cars at most
@@ -18,19 +19,19 @@ def walk_m(a, b):
 
 
 def group_ok(group) -> bool:
-    """Same campus, arrival window, and women-only respected for EVERY rider."""
-    if len({r["campus"] for r in group}) != 1 or len(group) > c.MAX_RIDERS_PER_CAR:
+    """Same campus, same gender, arrival window, at most 4."""
+    if len({r["campus"] for r in group}) != 1 or len({r["gender"] for r in group}) != 1:
         return False
-    if any(r["women_only"] for r in group) and any(r["gender"] != "F" for r in group):
+    if len(group) > c.MAX_RIDERS_PER_CAR:
         return False
     times = [r["desired_arrival"] for r in group]
     return max(times) - min(times) <= c.ARRIVAL_WINDOW_MIN
 
 
-def best_group(me, candidates, now):
+def best_group(me, candidates, now, seats=c.MAX_RIDERS_PER_CAR):
     near = sorted((s for s in candidates if group_ok([me, s]) and walk_m(me, s) <= 2 * c.MAX_WALK_M),
                   key=lambda s: (walk_m(me, s), s["id"]))[:POOL]
-    for size in range(c.MAX_RIDERS_PER_CAR, c.MIN_RIDERS_PER_CAR - 1, -1):
+    for size in range(seats, c.MIN_RIDERS_PER_CAR - 1, -1):
         best = None
         for others in combinations(near, size - 1):
             group = [me, *others]
@@ -41,55 +42,40 @@ def best_group(me, candidates, now):
             if max(walks) > c.MAX_WALK_M:
                 continue
             times = [r["desired_arrival"] for r in group]
-            arrive = min(times)
-            campus = c.CAMPUSES[me["campus"]]
-            km = haversine_m(pickup["lat"], pickup["lon"], campus["lat"], campus["lon"]) / 1000 * c.ROAD_FACTOR
-            depart = arrive - ceil(km / c.RIDE_SPEED_KMH * 60)
-            if depart < now + max(walks) / c.WALK_SPEED_M_PER_MIN:
+            trip = fare.trip(pickup["lat"], pickup["lon"], me["campus"], min(times))
+            if trip["pickup"] < now + c.JOIN_LEAD_MIN:  # joining closes 45 min before pickup
                 continue
-            score = sum(walks) + 50 * (max(times) - arrive)  # 1 min of spread ~ 50 m of walking
+            score = sum(walks) + 50 * (max(times) - min(times))  # 1 min of spread ~ 50 m of walking
             if best is None or score < best["score"]:
                 best = {"score": score, "group": group, "pickup": pickup, "walks": walks,
-                        "arrive": arrive, "depart": depart, "km": km}
+                        "arrive": round(trip["drop"]), "depart": trip["pickup"], "km": trip["km"],
+                        "minutes": round(trip["minutes"]), "fare": trip["fare"]}
         if best:
             return best
     return None
 
 
-def find(me, candidates, now):
-    """Best car for the student's time, else the closest earlier one: (match, minutes earlier)."""
+def find(me, candidates, now, seats=c.MAX_RIDERS_PER_CAR):
+    """Best car for the rider's time, else the closest earlier one: (match, minutes earlier)."""
     for earlier in range(0, c.MAX_EARLIER_MIN + 1, c.EARLIER_STEP_MIN):
-        m = best_group({**me, "desired_arrival": me["desired_arrival"] - earlier}, candidates, now)
+        m = best_group({**me, "desired_arrival": me["desired_arrival"] - earlier}, candidates, now, seats)
         if m:
             return m, earlier
     return None, 0
 
 
 def replacement(rest, candidates, pickup, arrive, depart, now):
-    """Closest student who can take a free seat without moving the pickup point or the times."""
+    """Closest rider who can take a free seat without moving the pickup point or the times."""
     ids = {r["id"] for r in rest}
     ok = [s for s in candidates if s["id"] not in ids and s["desired_arrival"] >= arrive and group_ok([*rest, s])
           and (w := walk_m(s, pickup)) <= c.MAX_WALK_M and now + w / c.WALK_SPEED_M_PER_MIN <= depart]
     return min(ok, key=lambda s: (walk_m(s, pickup), s["id"]), default=None)
 
 
-def crew(group) -> dict:
-    """The parts of a ride that depend on who is in it. First names only."""
-    n = len(group)
-    return {"riders": n, "others": [{"name": r["first_name"]} for r in group[1:]],
-            "women_only": all(r["gender"] == "F" for r in group) and any(r["women_only"] for r in group),
-            "seat_price": c.seat_price(n), "prices": c.price_comparison(n)}
+def solo_fare(me) -> float:
+    """What this rider would pay alone, door to campus, for the same arrive-by."""
+    return fare.up05(fare.trip(me["lat"], me["lon"], me["campus"], me["desired_arrival"])["fare"])
 
 
-def to_ride(m, me, day="today"):
-    """Public view of a match: never another student's location."""
-    group = m["group"]
-    rid = hashlib.sha256(repr((day, [(r["id"], m["depart"], me["campus"]) for r in group])).encode()).hexdigest()[:12]
-    return {
-        "id": rid, "day": day, "campus": me["campus"], **crew(group),
-        "pickup": {"lat": round(m["pickup"]["lat"], 5), "lon": round(m["pickup"]["lon"], 5),
-                   "label": f"{c.HOODS[me['hood']][0]} meeting point", "walk_m": round(m["walks"][0] / 10) * 10},
-        "depart": c.min_to_hhmm(m["depart"]), "arrive": c.min_to_hhmm(m["arrive"]),
-        "distance_km": round(m["km"], 1),
-        "max_seat_price": c.seat_price(c.MIN_RIDERS_PER_CAR),
-    }
+def ride_id(day, group, depart, campus) -> str:
+    return hashlib.sha256(repr((day, [(r["id"], depart, campus) for r in group])).encode()).hexdigest()[:12]

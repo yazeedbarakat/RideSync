@@ -1,4 +1,4 @@
-# Render blueprint: New > Blueprint > pick this repo. Public HTTPS, no secrets needed.
+# Render blueprint: New > Blueprint > pick this repo. Public HTTPS. GOOGLE_MAPS_KEY is optional.
 services:
   - type: web
     name: ridesync
@@ -7,4 +7,6 @@ services:
     healthCheckPath: /healthz
     envVars:
       - key: DEMO_NOW
-        value: "07:05"
+        value: "06:10"
+      - key: GOOGLE_MAPS_KEY
+        sync: false  # typed into the Render dashboard, never committed
